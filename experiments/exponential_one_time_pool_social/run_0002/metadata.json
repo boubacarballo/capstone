@@ -1,0 +1,37 @@
+{
+  "created_at_utc": "2026-04-21T01:45:59.890736Z",
+  "profile": "exponential_one_time_pool_social",
+  "swarm_type": "social_learning",
+  "cohort_dirname": "social_learning_swarm",
+  "num_knowledge_agents": 10,
+  "num_subject_agents": 10,
+  "social_learning_enabled": true,
+  "metric": "cosine-bm25",
+  "num_snapshots": 100,
+  "ground_truth_key": "career_fair_low",
+  "ground_truth_summary": "Hundreds of students crowd the university gym for the career fair, where recruiters from multiple industries trade quick conversations for resumes. Counselors and alumni give guidance while announcements keep the schedule moving, sustaining an energetic hunt for internships and entry-level roles.",
+  "ground_truth_snippet_count": 10,
+  "context": {
+    "p": 1,
+    "t_received": 1,
+    "t_summary": 1
+  },
+  "information_teleportation": {
+    "enabled": true,
+    "mode": "exponential_one_time_pool",
+    "visibility_probability": 0.75,
+    "decay_count": 3,
+    "decay_probability": 0.08,
+    "interval_seconds": 5.0,
+    "initial_active_count": 5,
+    "appearance_mean_time": 5.0,
+    "lifetime_mean_time": 10.0,
+    "active_ratio": 0.2,
+    "mean_swap_time": 10.0
+  },
+  "movement": {
+    "enabled": false,
+    "speed": 1.5,
+    "angular_velocity": 5.0
+  }
+}

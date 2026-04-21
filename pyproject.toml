@@ -27,4 +27,5 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "google>=3.0.0",
     "google-genai>=1.50.1",
+    "scikit-learn>=1.7.2",
 ]

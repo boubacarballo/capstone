@@ -11,24 +11,26 @@ visualization:
     update_interval_ms: 3000
 
 experiments:
-  active_profile: baseline_social
+  active_profile: exponential_one_time_pool_self
+  num_snapshots: 100
+  snapshot_interval_seconds: 3.0
   profiles:
     baseline_self:
       label: baseline_self
       swarm_type: self_learning
-      num_knowledge_agents: 25
-      ground_truth_key: ground_truth_3
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
       environment:
-        width: 1000
-        height: 1000
+        width: 750
+        height: 750
     baseline_social:
       label: baseline_social
       swarm_type: social_learning
-      num_knowledge_agents: 25
-      ground_truth_key: ground_truth_3
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
       environment:
-        width: 1000
-        height: 1000
+        width: 750
+        height: 750
 
     # Information decay experiment (probabilistic exponential-style decay of subject visibility)
     decay_self_learning:
@@ -67,28 +69,28 @@ experiments:
     movement_self_learning:
       label: movement_self_learning
       swarm_type: self_learning
-      num_knowledge_agents: 25
-      ground_truth_key: ground_truth_3
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
       environment:
-        width: 1000
-        height: 1000
+        width: 750
+        height: 750
       movement:
         enabled: true
-        speed: 1.5
-        angular_velocity: 5.0
+        speed: 2
+        angular_velocity: 0.0
 
     movement_social_learning:
       label: movement_social_learning
       swarm_type: social_learning
-      num_knowledge_agents: 25
-      ground_truth_key: ground_truth_3
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
       environment:
-        width: 1000
-        height: 1000
+        width: 750
+        height: 750
       movement:
         enabled: true
-        speed: 1.5
-        angular_velocity: 5.0
+        speed: 2
+        angular_velocity: 0.0
 
     # Hybrid: decay + movement (subjects move and disappear exponentially)
     hybrid_decay_movement_self_learning:
@@ -135,11 +137,11 @@ experiments:
     dynamic_pool_self:
       label: dynamic_pool_self
       swarm_type: self_learning
-      num_knowledge_agents: 25
-      ground_truth_key: ground_truth_3  # 20 snippets
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1  # 20 snippets
       environment:
-        width: 1000
-        height: 1000
+        width: 750
+        height: 750
       information_teleportation:
         enabled: true
         mode: dynamic_pool
@@ -150,11 +152,11 @@ experiments:
     dynamic_pool_social:
       label: dynamic_pool_social
       swarm_type: social_learning
-      num_knowledge_agents: 25
-      ground_truth_key: ground_truth_3
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
       environment:
-        width: 1000
-        height: 1000
+        width: 750
+        height: 750
       information_teleportation:
         enabled: true
         mode: dynamic_pool
@@ -162,6 +164,126 @@ experiments:
         appearance_mean_time: 5.0
         lifetime_mean_time: 10.0
 
+    dynamic_pool_self_10:
+      label: dynamic_pool_self_10
+      swarm_type: self_learning
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
+      environment:
+        width: 750
+        height: 750
+      information_teleportation:
+        enabled: true
+        mode: dynamic_pool
+        initial_active_count: 5       # Start with 5 active subjects
+        appearance_mean_time: 5.0     # Avg 5 seconds between new appearances
+        lifetime_mean_time: 10.0 
+
+    dynamic_pool_social_10:
+      label: dynamic_pool_social_10
+      swarm_type: social_learning
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
+      environment:
+        width: 750
+        height: 750
+      information_teleportation:
+        enabled: true
+        mode: dynamic_pool
+        initial_active_count: 5
+        appearance_mean_time: 5.0
+        lifetime_mean_time: 10.0
+
+    # Constant ratio pool: all subjects spawned upfront, a fixed % always active
+    constant_ratio_pool_self:
+      label: constant_ratio_pool_self
+      swarm_type: self_learning
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1   # 10 snippets → 2 active at 20%
+      environment:
+        width: 750
+        height: 750
+      information_teleportation:
+        enabled: true
+        mode: constant_ratio_pool
+        active_ratio: 0.2          # 20% of all subjects active at all times
+        lifetime_mean_time: 10.0   # avg seconds each active subject stays visible
+
+    constant_ratio_pool_social:
+      label: constant_ratio_pool_social
+      swarm_type: social_learning
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
+      environment:
+        width: 750
+        height: 750
+      information_teleportation:
+        enabled: true
+        mode: constant_ratio_pool
+        active_ratio: 0.2
+        lifetime_mean_time: 10.0
+
+    # Exponential swap pool: all subjects spawned upfront; a single global Poisson timer
+    # fires at exponentially-distributed intervals and swaps exactly one active subject
+    # for one inactive subject each time.
+    exponential_swap_pool_self:
+      label: exponential_swap_pool_self
+      swarm_type: self_learning
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1   # 10 snippets → 2 active at 20%
+      environment:
+        width: 750
+        height: 750
+      information_teleportation:
+        enabled: true
+        mode: exponential_swap_pool
+        active_ratio: 0.2        # fraction of subjects active at initialisation
+        mean_swap_time: 10.0     # mean seconds between consecutive single swaps
+
+    exponential_swap_pool_social:
+      label: exponential_swap_pool_social
+      swarm_type: social_learning
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
+      environment:
+        width: 750
+        height: 750
+      information_teleportation:
+        enabled: true
+        mode: exponential_swap_pool
+        active_ratio: 0.2
+        mean_swap_time: 10.0
+
+    # Exponential one-time pool: identical to exponential_swap_pool, but once a subject is
+    # swapped out it is permanently retired and can never re-enter the active environment.
+    exponential_one_time_pool_self:
+      label: exponential_one_time_pool_self
+      swarm_type: self_learning
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1   # 10 snippets → 2 active at 20%
+      environment:
+        width: 750
+        height: 750
+      information_teleportation:
+        enabled: true
+        mode: exponential_one_time_pool
+        active_ratio: 0.2        # fraction of subjects active at initialisation
+        mean_swap_time: 10.0     # mean seconds between consecutive single swaps
+
+    exponential_one_time_pool_social:
+      label: exponential_one_time_pool_social
+      swarm_type: social_learning
+      num_knowledge_agents: 10
+      ground_truth_key: ground_truth_1
+      environment:
+        width: 750
+        height: 750
+      information_teleportation:
+        enabled: true
+        mode: exponential_one_time_pool
+        active_ratio: 0.2
+        mean_swap_time: 10.0
+
 swarm_overrides:
-  swarm_type: social_learning
-  social_learning_enabled: True
+  swarm_type: self_learning
+  social_learning_enabled: False

@@ -1,10 +1,10 @@
 #!/bin/bash
 
-for i in {1..25}; do
-    echo "Run $i/25 starting..."
+for i in {1..10}; do
+    echo "Run $i/10 starting..."
     uv run experiment.py
-    echo "Run $i/25 finished."
+    echo "Run $i/10 finished."
     echo "----------------------"
 done
 
-echo "All 25 runs completed!"
+echo "All 10 runs completed!"

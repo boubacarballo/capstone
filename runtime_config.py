@@ -116,8 +116,14 @@ def get_runtime_settings() -> Dict[str, Any]:
     movement_speed = movement_cfg.get("speed", 1.5)
     movement_angular_velocity = movement_cfg.get("angular_velocity", 5.0)
 
+    experiments_cfg = config.get("experiments", {})
+    num_snapshots = int(profile.get("num_snapshots") or experiments_cfg.get("num_snapshots", 60))
+    snapshot_interval_seconds = float(profile.get("snapshot_interval_seconds") or experiments_cfg.get("snapshot_interval_seconds", 2.0))
+
     return {
         "profile_key": get_active_profile_key(),
+        "num_snapshots": num_snapshots,
+        "snapshot_interval_seconds": snapshot_interval_seconds,
         "swarm_type": swarm_type,
         "social_learning_enabled": social_learning_enabled,
         "environment": {

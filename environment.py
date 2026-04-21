@@ -8,7 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from llm import LLM
 import pygame as pg
-from metrics import compute_bert_score, compute_score, compute_final_score, compute_similarity_matrix, compute_bm25_matrix, save_similarity_heatmap
+from metrics import compute_bert_score, compute_score, compute_final_score, compute_nli_score, compute_similarity_matrix, compute_bm25_matrix, compute_nli_matrix, save_similarity_heatmap
 from visualize import LivePlot
 import queue
 from concurrent.futures import ThreadPoolExecutor, Future, as_completed
@@ -55,6 +55,14 @@ class Environment(Simulation):
         self.initial_active_count = teleport_settings.get("initial_active_count", 5)
         self.appearance_mean_time = teleport_settings.get("appearance_mean_time", 5.0)
         self.lifetime_mean_time = teleport_settings.get("lifetime_mean_time", 10.0)
+        
+        # Constant ratio pool mode settings
+        self.active_ratio = teleport_settings.get("active_ratio", 0.2)
+
+        # Exponential swap pool mode settings
+        self.mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
+        self.next_swap_time = None  # Scheduled time of next single swap (exponential_swap_pool only)
+        self._appeared_subjects: set[int] = set()  # object ids of subjects that have ever been active (one_time_pool)
         
         # Subject lifetime state
         # - Used by dynamic_pool mode (with snippet pool + recycling)
@@ -159,6 +167,15 @@ class Environment(Simulation):
                 if self.teleportation_mode == "dynamic_pool":
                     # Dynamic pool mode: continuous checking (not interval-based)
                     self.dynamic_pool_update()
+                elif self.teleportation_mode == "constant_ratio_pool":
+                    # Constant ratio pool: maintain fixed % of subjects active at all times
+                    self.constant_ratio_pool_update()
+                elif self.teleportation_mode == "exponential_swap_pool":
+                    # Single global Poisson timer: swap one subject at a time
+                    self.exponential_swap_pool_update()
+                elif self.teleportation_mode == "exponential_one_time_pool":
+                    # Like exponential_swap_pool but subjects are permanently retired after swap-out
+                    self.exponential_one_time_pool_update()
                 elif self.teleportation_mode == "decay":
                     # Continuous-time exponential decay of subjects (no reappearance)
                     self.decay_subject_visibility()
@@ -235,6 +252,8 @@ class Environment(Simulation):
                         future = self.executor.submit(compute_bert_score, cleaned_summary, self.ground_truth_facts)
                     elif metric_name == "cosine-bm25":
                         future = self.executor.submit(compute_final_score, cleaned_summary, self.ground_truth_facts)
+                    elif metric_name == "nli":
+                        future = self.executor.submit(compute_nli_score, cleaned_summary, self.ground_truth_facts)
                     else:
                         raise ValueError(f"Invalid metric: {self.metric}")
                     
@@ -405,6 +424,39 @@ class Environment(Simulation):
         print(f"🏊 Dynamic pool initialized: {len(self.snippet_pool)} snippets in pool, "
               f"{len(self.subject_lifetimes)} active subjects")
 
+    def initialize_constant_ratio_pool(self):
+        """
+        Initialize constant ratio pool mode.
+        All subjects are already spawned; this method makes exactly
+        round(active_ratio * total) of them visible and hides the rest.
+        Visible subjects each receive an independent exponential lifetime.
+        """
+        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
+        total = len(subjects)
+        target_active = max(1, round(self.active_ratio * total))
+
+        random.shuffle(subjects)
+        active_subjects = subjects[:target_active]
+        inactive_subjects = subjects[target_active:]
+
+        env_width = self.runtime_settings["environment"]["width"]
+        env_height = self.runtime_settings["environment"]["height"]
+
+        current_time = self._elapsed_sim_seconds()
+        for subject in active_subjects:
+            x = random.uniform(50, env_width - 50)
+            y = random.uniform(50, env_height - 50)
+            subject.pos.update((x, y))
+            subject.set_visible(True)
+            lifetime = random.expovariate(1.0 / self.lifetime_mean_time)
+            self.subject_lifetimes[subject] = current_time + lifetime
+
+        for subject in inactive_subjects:
+            subject.set_visible(False)
+
+        print(f"Constant ratio pool initialized: {target_active}/{total} subjects active "
+              f"({self.active_ratio:.0%} target ratio)")
+
     def _schedule_next_appearance(self):
         """Schedule when the next snippet from the pool will appear."""
         if self.snippet_pool:
@@ -481,11 +533,231 @@ class Environment(Simulation):
             new_subject = self._spawn_subject_from_pool()
             if new_subject:
                 active_count = len([a for a in self._agents if getattr(a, "role", None) == "SUBJECT" and getattr(a, "visible", True)])
-                print(f"✨ New subject appeared from pool. Pool: {len(self.snippet_pool)}, Active: {active_count}")
+                print(f"New subject appeared from pool. Pool: {len(self.snippet_pool)}, Active: {active_count}")
             
             # Schedule next appearance
             self._schedule_next_appearance()
     
+    def constant_ratio_pool_update(self):
+        """
+        Maintain a constant active_ratio of all subject agents visible.
+        Called every tick. When any active subject's lifetime expires it is
+        hidden and the same number of randomly chosen inactive subjects are
+        immediately made visible, restoring the target count.
+        """
+        current_time = self._elapsed_sim_seconds()
+        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
+        total = len(subjects)
+        if not total:
+            return
+
+        target_active = max(1, round(self.active_ratio * total))
+
+        expired = [
+            s for s, exp in list(self.subject_lifetimes.items())
+            if current_time >= exp and getattr(s, "visible", True)
+        ]
+        for subject in expired:
+            subject.set_visible(False)
+            del self.subject_lifetimes[subject]
+
+        if expired:
+            # Immediately replace each expired subject with a random inactive one
+            inactive = [s for s in subjects if not getattr(s, "visible", True)]
+            currently_active = [s for s in subjects if getattr(s, "visible", True)]
+            needed = target_active - len(currently_active)
+            to_activate = random.sample(inactive, min(needed, len(inactive)))
+
+            env_width = self.runtime_settings["environment"]["width"]
+            env_height = self.runtime_settings["environment"]["height"]
+ 
+            for subject in to_activate:
+                x = random.uniform(50, env_width - 50)
+                y = random.uniform(50, env_height - 50)
+                subject.pos.update((x, y))
+                subject.set_visible(True)
+                lifetime = random.expovariate(1.0 / self.lifetime_mean_time)
+                self.subject_lifetimes[subject] = current_time + lifetime
+
+            new_active_count = len([s for s in subjects if getattr(s, "visible", True)])
+            print(f"🔄 Ratio pool: {len(expired)} expired → {len(to_activate)} activated. "
+                  f"Active: {new_active_count}/{total} (target: {target_active})")
+
+
+    def constant_ratio_pool_update_with_kill(self):
+
+        current_time = self._elapsed_sim_seconds()
+        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
+        total = len(subjects)
+        if not total:
+            return
+
+        target_active = max(1, round(self.active_ratio * total)) #20%
+        random_number = random.randint(0, 1)
+
+        kill_probablitity = 1/total
+        if random_number < kill_probablitity:
+            subject = random.choice(subjects)
+            subject.set_visible(False)
+            # Immediately replace each expired subject with a random inactive one
+
+            inactive = [s for s in subjects if not getattr(s, "visible", True)]
+            currently_active = [s for s in subjects if getattr(s, "visible", True)]
+            needed = target_active - len(currently_active)
+            to_activate = random.sample(inactive, min(needed, len(inactive)))
+
+            env_width = self.runtime_settings["environment"]["width"]
+            env_height = self.runtime_settings["environment"]["height"]
+
+            for subject in to_activate:
+                x = random.uniform(50, env_width - 50)
+                y = random.uniform(50, env_height - 50)
+                subject.pos.update((x, y))
+                subject.set_visible(True)
+                lifetime = random.expovariate(1.0 / self.lifetime_mean_time)
+                self.subject_lifetimes[subject] = current_time + lifetime
+
+            new_active_count = len([s for s in subjects if getattr(s, "visible", True)])
+
+    def initialize_exponential_swap_pool(self):
+        """
+        Initialize exponential swap pool mode.
+        All subjects are already spawned. Activate round(active_ratio * N) of them
+        at random positions, hide the rest, then sample the first swap time from
+        an exponential distribution with mean = mean_swap_time.
+        No per-subject lifetimes are used — a single global timer drives all swaps.
+        """
+        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
+        total = len(subjects)
+        target_active = max(1, round(self.active_ratio * total))
+
+        random.shuffle(subjects)
+        active_subjects = subjects[:target_active]
+        inactive_subjects = subjects[target_active:]
+
+        env_width = self.runtime_settings["environment"]["width"]
+        env_height = self.runtime_settings["environment"]["height"]
+
+        for subject in active_subjects:
+            x = random.uniform(50, env_width - 50)
+            y = random.uniform(50, env_height - 50)
+            subject.pos.update((x, y))
+            subject.set_visible(True)
+
+        for subject in inactive_subjects:
+            subject.set_visible(False)
+
+        current_time = self._elapsed_sim_seconds()
+        self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
+
+        print(f"Exponential swap pool initialized: {target_active}/{total} subjects active "
+              f"({self.active_ratio:.0%} ratio), first swap at t={self.next_swap_time:.2f}s")
+
+    def exponential_swap_pool_update(self):
+        """
+        Single-event Poisson swap: do nothing until next_swap_time is reached, then
+        hide exactly one random active subject and show exactly one random inactive subject.
+        Immediately sample the next swap time from Exp(mean_swap_time).
+        """
+        if self.next_swap_time is None:
+            return
+
+        current_time = self._elapsed_sim_seconds()
+        if current_time < self.next_swap_time:
+            return
+
+        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
+        active = [s for s in subjects if getattr(s, "visible", True)]
+        inactive = [s for s in subjects if not getattr(s, "visible", True)]
+
+        if active and inactive:
+            outgoing = random.choice(active)
+            outgoing.set_visible(False)
+
+            incoming = random.choice(inactive)
+            env_width = self.runtime_settings["environment"]["width"]
+            env_height = self.runtime_settings["environment"]["height"]
+            incoming.pos.update((random.uniform(50, env_width - 50), random.uniform(50, env_height - 50)))
+            incoming.set_visible(True)
+
+            new_active_count = len(active)  # net change is zero: −1 +1
+            print(f"Exponential swap: 1 out, 1 in. Active: {new_active_count}/{len(subjects)}")
+
+        self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
+
+    def initialize_exponential_one_time_pool(self):
+        """
+        Initialize exponential one-time pool mode.
+        Identical to initialize_exponential_swap_pool, but the initially-active subjects
+        are recorded in _appeared_subjects so they can never re-enter once swapped out.
+        """
+        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
+        total = len(subjects)
+        target_active = max(1, round(self.active_ratio * total))
+
+        random.shuffle(subjects)
+        active_subjects = subjects[:target_active]
+        inactive_subjects = subjects[target_active:]
+
+        env_width = self.runtime_settings["environment"]["width"]
+        env_height = self.runtime_settings["environment"]["height"]
+
+        for subject in active_subjects:
+            x = random.uniform(50, env_width - 50)
+            y = random.uniform(50, env_height - 50)
+            subject.pos.update((x, y))
+            subject.set_visible(True)
+            self._appeared_subjects.add(id(subject))
+
+        for subject in inactive_subjects:
+            subject.set_visible(False)
+
+        current_time = self._elapsed_sim_seconds()
+        self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
+
+        never_appeared_count = len(inactive_subjects)
+        print(f"Exponential one-time pool initialized: {target_active}/{total} subjects active "
+              f"({self.active_ratio:.0%} ratio), {never_appeared_count} never-appeared in reserve, "
+              f"first swap at t={self.next_swap_time:.2f}s")
+
+    def exponential_one_time_pool_update(self):
+        """
+        Single-event Poisson swap with permanent retirement.
+        When the timer fires: one random active subject is hidden and permanently retired
+        (added to _appeared_subjects so it will never be swapped back in).
+        A replacement is drawn only from subjects that have NEVER appeared before.
+        If no never-appeared subjects remain, the active count decreases by one.
+        """
+        if self.next_swap_time is None:
+            return
+
+        current_time = self._elapsed_sim_seconds()
+        if current_time < self.next_swap_time:
+            return
+
+        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
+        active = [s for s in subjects if getattr(s, "visible", True)]
+        never_appeared = [s for s in subjects if not getattr(s, "visible", True) and id(s) not in self._appeared_subjects]
+
+        if active:
+            outgoing = random.choice(active)
+            outgoing.set_visible(False)
+            # outgoing was already in _appeared_subjects from init or a previous swap-in
+
+            if never_appeared:
+                incoming = random.choice(never_appeared)
+                env_width = self.runtime_settings["environment"]["width"]
+                env_height = self.runtime_settings["environment"]["height"]
+                incoming.pos.update((random.uniform(50, env_width - 50), random.uniform(50, env_height - 50)))
+                incoming.set_visible(True)
+                self._appeared_subjects.add(id(incoming))
+                print(f"One-time swap: 1 retired, 1 new in. Active: {len(active)}/{len(subjects)}, "
+                      f"Never-appeared remaining: {len(never_appeared) - 1}")
+            else:
+                print(f"One-time swap: 1 retired, pool exhausted. Active: {len(active) - 1}/{len(subjects)}")
+
+        self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
+
     def save_experiment_data(self, plot: LivePlot):
         """Save experiment data and plot to the experiments directory"""
         if self._experiment_saved:
@@ -519,6 +791,7 @@ class Environment(Simulation):
                     data["agents"][agent_key] = {
                         "scores": {str(t): scores[i] if i < len(scores) else 0.0 for i, t in enumerate(timestamps)},
                         "summaries": {str(t): summaries[i] if i < len(summaries) else "" for i, t in enumerate(timestamps)},
+                        "llm_context": agent.llm.get_context_stats(),
                     }
 
             base_dir = Path("experiments")
@@ -567,6 +840,8 @@ class Environment(Simulation):
                     "initial_active_count": self.initial_active_count,
                     "appearance_mean_time": self.appearance_mean_time,
                     "lifetime_mean_time": self.lifetime_mean_time,
+                    "active_ratio": self.active_ratio,
+                    "mean_swap_time": self.mean_swap_time,
                 } if self.teleportation_enabled else {"enabled": False},
                 "movement": self.runtime_settings.get("movement", {}),
             }
@@ -596,6 +871,16 @@ class Environment(Simulation):
                     print(f"Saved cosine + BM25 heatmaps for agent {agent_key}")
                 except Exception as e_hm:
                     print(f"Failed to save heatmap for agent {agent_key}: {e_hm}")
+
+                if (self.metric or "").lower() == "nli":
+                    try:
+                        nli_data = compute_nli_matrix(final_summary, self.ground_truth_facts)
+                        agent_data["final_nli_matrix"] = nli_data
+                        nli_path = matrices_dir / f"agent_{agent_key}_nli.png"
+                        save_similarity_heatmap(nli_data, nli_path, agent_id=agent_key, metric_label="NLI Entailment")
+                        print(f"Saved NLI heatmap for agent {agent_key}")
+                    except Exception as e_nli:
+                        print(f"Failed to save NLI heatmap for agent {agent_key}: {e_nli}")
 
             # Save JSON
             json_path = run_dir / "experiment.json"
