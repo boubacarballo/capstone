@@ -28,4 +28,5 @@ dependencies = [
     "google>=3.0.0",
     "google-genai>=1.50.1",
     "scikit-learn>=1.7.2",
+    "scipy>=1.14.0",
 ]

@@ -197,21 +197,31 @@ def process_run(
 
 
 
-def _save_or_show(fig: plt.Figure, output_path: Path | str | None) -> None:
-    if output_path is not None:
-        output_path = Path(output_path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_path, dpi=150, bbox_inches="tight")
-        print(f"Plot saved → {output_path}")
-    else:
-        plt.show()
-
 
 def plot_runs(
     run_results: list[tuple[list[int], np.ndarray, list[str], str]],
     output_path: Path | str | None = None,
     title: str = "Entailment Coverage Score Over Time",
     full_range: bool = False,
+    # --- axis labels ---
+    xlabel: str = "Time (seconds)",
+    ylabel: str = "Coverage score  (entailed claims / total claims)",
+    # --- axis limits ---
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] = (-0.02, 1.08),
+    # --- figure ---
+    figsize: tuple[float, float] | None = None,
+    dpi: int = 150,
+    # --- fonts ---
+    title_fontsize: int = 13,
+    label_fontsize: int = 11,
+    legend_fontsize: int = 8,
+    # --- legend ---
+    legend_loc: str = "lower right",
+    show_legend: bool = True,
+    legend_labels: list[str] | None = None,
+    # --- grid ---
+    grid: bool = True,
 ) -> plt.Figure:
     """
     Plot per-agent coverage trajectories and the swarm average.
@@ -229,15 +239,50 @@ def plot_runs(
         If provided, save the figure here instead of showing it interactively.
     title :
         Overall figure title.
+    full_range :
+        Show the full x range instead of clipping to the plateau.
+    xlabel :
+        X-axis label text.
+    ylabel :
+        Y-axis label text.
+    xlim :
+        ``(x_min, x_max)`` override for the x-axis.  When ``None`` the range
+        is determined automatically (plateau detection or ``full_range``).
+    ylim :
+        ``(y_min, y_max)`` for the y-axis.
+    figsize :
+        Figure width and height in inches, e.g. ``(14, 6)``.  When ``None``
+        a sensible default is derived from the number of runs.
+    dpi :
+        Resolution used when saving the figure.
+    title_fontsize :
+        Font size for the figure title.
+    label_fontsize :
+        Font size for axis labels.
+    legend_fontsize :
+        Font size for the legend text.
+    legend_loc :
+        Matplotlib location string for the legend (e.g. ``"lower right"``).
+    show_legend :
+        Set to ``False`` to suppress the legend entirely.
+    legend_labels :
+        Custom subplot title labels, one string per run in *run_results*.
+        When ``None`` the label embedded in each result tuple is used.
+        In subplot mode the legend inside each panel still shows per-agent
+        names and ``"average"``; this parameter controls the subplot title
+        that identifies each run.
+    grid :
+        Set to ``False`` to hide the background grid.
 
     Returns
     -------
     matplotlib Figure
     """
     n_runs = len(run_results)
+    default_figsize = (max(11, 10 * n_runs), 5)
     fig, axes = plt.subplots(
         1, n_runs,
-        figsize=(max(11, 10 * n_runs), 5),
+        figsize=figsize or default_figsize,
         sharey=True,
         squeeze=False,
     )
@@ -251,7 +296,7 @@ def plot_runs(
 
         avg_raw = all_scores.mean(axis=0)
 
-        # Zoom x-axis to where the average plateaus, keep a short tail
+        # Determine x_max (overridden by xlim below if provided)
         if full_range:
             x_max = float(ts[-1])
         else:
@@ -274,21 +319,37 @@ def plot_runs(
             linewidth=2.8, color="black", label="average", zorder=5,
         )
 
-        ax.set_xlim(ts[0], x_max)
-        ax.set_ylim(-0.02, 1.08)
-        ax.set_xlabel("Time (seconds)", fontsize=11)
-        ax.grid(True, alpha=0.25, linestyle="--")
-        ax.set_title(run_label, fontsize=11, pad=6)
+        ax.set_xlim(*xlim) if xlim is not None else ax.set_xlim(ts[0], x_max)
+        ax.set_ylim(*ylim)
+        ax.set_xlabel(xlabel, fontsize=label_fontsize)
+        if grid:
+            ax.grid(True, alpha=0.25, linestyle="--")
 
-        handles, labels = ax.get_legend_handles_labels()
-        if handles:
-            ax.legend(fontsize=8, ncol=2, loc="lower right", framealpha=0.7)
+        subplot_title = (
+            legend_labels[col]
+            if legend_labels is not None and col < len(legend_labels)
+            else run_label
+        )
+        ax.set_title(subplot_title, fontsize=label_fontsize, pad=6)
 
-    axes[0, 0].set_ylabel("Coverage score  (entailed claims / total claims)", fontsize=11)
+        if show_legend:
+            handles, labels = ax.get_legend_handles_labels()
+            if handles:
+                ax.legend(fontsize=legend_fontsize, ncol=2, loc=legend_loc, framealpha=0.7)
 
-    fig.suptitle(title, fontsize=13, y=1.02)
+    axes[0, 0].set_ylabel(ylabel, fontsize=label_fontsize)
+
+    fig.suptitle(title, fontsize=title_fontsize, y=1.02)
     plt.tight_layout()
-    _save_or_show(fig, output_path)
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
+        print(f"Plot saved → {output_path}")
+    else:
+        plt.show()
+
     return fig
 
 
@@ -297,6 +358,25 @@ def plot_runs_overlay(
     output_path: Path | str | None = None,
     title: str = "Entailment Coverage Score Over Time",
     full_range: bool = False,
+    # --- axis labels ---
+    xlabel: str = "Time (seconds)",
+    ylabel: str = "Coverage score  (entailed claims / total claims)",
+    # --- axis limits ---
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] = (-0.02, 1.08),
+    # --- figure ---
+    figsize: tuple[float, float] = (11, 5),
+    dpi: int = 150,
+    # --- fonts ---
+    title_fontsize: int = 13,
+    label_fontsize: int = 11,
+    legend_fontsize: int = 9,
+    # --- legend ---
+    legend_loc: str = "lower right",
+    show_legend: bool = True,
+    legend_labels: list[str] | None = None,
+    # --- grid ---
+    grid: bool = True,
 ) -> plt.Figure:
     """
     Plot all runs on a single axes.
@@ -315,6 +395,36 @@ def plot_runs_overlay(
         If provided, save the figure here instead of showing it interactively.
     title :
         Overall figure title.
+    full_range :
+        Show the full x range instead of clipping to the plateau.
+    xlabel :
+        X-axis label text.
+    ylabel :
+        Y-axis label text.
+    xlim :
+        ``(x_min, x_max)`` override for the x-axis.  When ``None`` the range
+        is determined automatically (plateau detection or ``full_range``).
+    ylim :
+        ``(y_min, y_max)`` for the y-axis.
+    figsize :
+        Figure width and height in inches, e.g. ``(14, 6)``.
+    dpi :
+        Resolution used when saving the figure.
+    title_fontsize :
+        Font size for the figure title.
+    label_fontsize :
+        Font size for axis labels.
+    legend_fontsize :
+        Font size for the legend text.
+    legend_loc :
+        Matplotlib location string for the legend (e.g. ``"upper left"``).
+    show_legend :
+        Set to ``False`` to suppress the legend entirely.
+    legend_labels :
+        Custom legend entry text, one string per run in *run_results*.
+        When ``None`` the label embedded in each result tuple is used.
+    grid :
+        Set to ``False`` to hide the background grid.
 
     Returns
     -------
@@ -332,7 +442,7 @@ def plot_runs_overlay(
         "#17becf",  # cyan
     ]
 
-    fig, ax = plt.subplots(figsize=(11, 5))
+    fig, ax = plt.subplots(figsize=figsize)
 
     # Compute the global x_max across all runs so the axis is consistent
     global_x_max = 0.0
@@ -360,21 +470,36 @@ def plot_runs_overlay(
             )
 
         # Bold average line – goes into the legend
+        entry_label = (
+            legend_labels[run_idx]
+            if legend_labels is not None and run_idx < len(legend_labels)
+            else run_label
+        )
         ax.plot(
             ts, avg_raw,
-            linewidth=2.8, color=base_color, label=run_label, zorder=5,
+            linewidth=2.8, color=base_color, label=entry_label, zorder=5,
         )
 
-    ax.set_xlim(0, global_x_max)
-    ax.set_ylim(-0.02, 1.08)
-    ax.set_xlabel("Time (seconds)", fontsize=11)
-    ax.set_ylabel("Coverage score  (entailed claims / total claims)", fontsize=11)
-    ax.grid(True, alpha=0.25, linestyle="--")
-    ax.legend(fontsize=9, loc="lower right", framealpha=0.8)
+    ax.set_xlim(*xlim) if xlim is not None else ax.set_xlim(0, global_x_max)
+    ax.set_ylim(*ylim)
+    ax.set_xlabel(xlabel, fontsize=label_fontsize)
+    ax.set_ylabel(ylabel, fontsize=label_fontsize)
+    if grid:
+        ax.grid(True, alpha=0.25, linestyle="--")
+    if show_legend:
+        ax.legend(fontsize=legend_fontsize, loc=legend_loc, framealpha=0.8)
 
-    fig.suptitle(title, fontsize=13, y=1.02)
+    fig.suptitle(title, fontsize=title_fontsize, y=1.02)
     plt.tight_layout()
-    _save_or_show(fig, output_path)
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
+        print(f"Plot saved → {output_path}")
+    else:
+        plt.show()
+
     return fig
 
 
@@ -390,6 +515,25 @@ def main(
     nli_model=None,
     overlay: bool = False,
     full_range: bool = False,
+    # --- axis labels ---
+    xlabel: str = "Time (seconds)",
+    ylabel: str = "Coverage score  (entailed claims / total claims)",
+    # --- axis limits ---
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] = (-0.02, 1.08),
+    # --- figure ---
+    figsize: tuple[float, float] | None = None,
+    dpi: int = 150,
+    # --- fonts ---
+    title_fontsize: int = 13,
+    label_fontsize: int = 11,
+    legend_fontsize: int | None = None,
+    # --- legend ---
+    legend_loc: str = "lower right",
+    show_legend: bool = True,
+    legend_labels: list[str] | None = None,
+    # --- grid ---
+    grid: bool = True,
 ) -> list[tuple[list[int], np.ndarray, list[str], str]]:
     """
     Process one or more experiment run folders and plot coverage scores.
@@ -408,6 +552,37 @@ def main(
     overlay :
         When True, all runs are drawn on a single shared axes instead of
         side-by-side subplots.
+    full_range :
+        Show the full x range instead of clipping to the plateau.
+    xlabel :
+        X-axis label text.
+    ylabel :
+        Y-axis label text.
+    xlim :
+        ``(x_min, x_max)`` override for the x-axis.
+    ylim :
+        ``(y_min, y_max)`` for the y-axis.
+    figsize :
+        Figure width and height in inches. When ``None`` a default is derived
+        from the number of runs.
+    dpi :
+        Resolution used when saving the figure.
+    title_fontsize :
+        Font size for the figure title.
+    label_fontsize :
+        Font size for axis labels.
+    legend_fontsize :
+        Font size for legend text (defaults per plot function when ``None``).
+    legend_loc :
+        Matplotlib legend location string.
+    show_legend :
+        Set to ``False`` to suppress the legend entirely.
+    legend_labels :
+        Custom legend labels, one string per run.  In overlay mode these
+        replace the per-run legend entries; in subplot mode they replace
+        the subplot titles.
+    grid :
+        Set to ``False`` to hide the background grid.
 
     Returns
     -------
@@ -431,13 +606,29 @@ def main(
     if out is None and len(run_folders) == 1:
         out = run_folders[0] / "coverage_over_time.png"
 
-    plot_fn = plot_runs_overlay if overlay else plot_runs
-    plot_fn(
-        run_results,
+    plot_kwargs: dict = dict(
         output_path=out,
         title=title or "Entailment Coverage Score Over Time",
         full_range=full_range,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        xlim=xlim,
+        ylim=ylim,
+        dpi=dpi,
+        title_fontsize=title_fontsize,
+        label_fontsize=label_fontsize,
+        legend_loc=legend_loc,
+        show_legend=show_legend,
+        legend_labels=legend_labels,
+        grid=grid,
     )
+    if figsize is not None:
+        plot_kwargs["figsize"] = figsize
+    if legend_fontsize is not None:
+        plot_kwargs["legend_fontsize"] = legend_fontsize
+
+    plot_fn = plot_runs_overlay if overlay else plot_runs
+    plot_fn(run_results, **plot_kwargs)
 
     return run_results
 
@@ -461,8 +652,7 @@ if __name__ == "__main__":
         help="One or more experiment run folder paths (e.g. experiments/baseline_social/run_0042).",
     )
     parser.add_argument(
-        "--output",
-        "-o",
+        "--output", "-o",
         metavar="PATH",
         default=None,
         help=(
@@ -471,8 +661,7 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "--title",
-        "-t",
+        "--title", "-t",
         metavar="TITLE",
         default=None,
         help="Custom title for the plot.",
@@ -496,5 +685,125 @@ if __name__ == "__main__":
             "By default the x-axis is clipped to where the average score plateaus."
         ),
     )
+    # ---- axis labels ----
+    parser.add_argument(
+        "--xlabel",
+        metavar="LABEL",
+        default="Time (seconds)",
+        help="X-axis label. Default: 'Time (seconds)'.",
+    )
+    parser.add_argument(
+        "--ylabel",
+        metavar="LABEL",
+        default="Coverage score  (entailed claims / total claims)",
+        help="Y-axis label.",
+    )
+    # ---- axis limits ----
+    parser.add_argument(
+        "--xlim",
+        nargs=2,
+        type=float,
+        metavar=("X_MIN", "X_MAX"),
+        default=None,
+        help="X-axis limits, e.g. --xlim 0 3600.",
+    )
+    parser.add_argument(
+        "--ylim",
+        nargs=2,
+        type=float,
+        metavar=("Y_MIN", "Y_MAX"),
+        default=[-0.02, 1.08],
+        help="Y-axis limits. Default: -0.02 1.08.",
+    )
+    # ---- figure ----
+    parser.add_argument(
+        "--figsize",
+        nargs=2,
+        type=float,
+        metavar=("WIDTH", "HEIGHT"),
+        default=None,
+        help="Figure size in inches, e.g. --figsize 14 6.",
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=150,
+        help="Resolution (DPI) for the saved image. Default: 150.",
+    )
+    # ---- fonts ----
+    parser.add_argument(
+        "--title-fontsize",
+        type=int,
+        default=13,
+        metavar="PT",
+        help="Font size for the figure title. Default: 13.",
+    )
+    parser.add_argument(
+        "--label-fontsize",
+        type=int,
+        default=11,
+        metavar="PT",
+        help="Font size for axis labels. Default: 11.",
+    )
+    parser.add_argument(
+        "--legend-fontsize",
+        type=int,
+        default=None,
+        metavar="PT",
+        help="Font size for legend text (uses per-plot default when omitted).",
+    )
+    # ---- legend ----
+    parser.add_argument(
+        "--legend-loc",
+        default="lower right",
+        metavar="LOC",
+        help="Legend location string, e.g. 'upper left'. Default: 'lower right'.",
+    )
+    parser.add_argument(
+        "--no-legend",
+        action="store_true",
+        default=False,
+        help="Hide the legend.",
+    )
+    # ---- grid ----
+    parser.add_argument(
+        "--no-grid",
+        action="store_true",
+        default=False,
+        help="Hide the background grid.",
+    )
+    # ---- legend labels ----
+    parser.add_argument(
+        "--legend-labels",
+        nargs="+",
+        metavar="LABEL",
+        default=None,
+        help=(
+            "Custom legend labels, one per run folder (in the same order). "
+            "In overlay mode these replace the per-run legend entries; "
+            "in subplot mode they replace the subplot titles. "
+            "Example: --legend-labels 'Self learning' 'Social learning'"
+        ),
+    )
+
     args = parser.parse_args()
-    main(args.run_folders, output_path=args.output, title=args.title, overlay=args.overlay, full_range=args.full_range)
+    main(
+        args.run_folders,
+        output_path=args.output,
+        title=args.title,
+        overlay=args.overlay,
+        full_range=args.full_range,
+        xlabel=args.xlabel,
+        ylabel=args.ylabel,
+        xlim=tuple(args.xlim) if args.xlim else None,
+        ylim=tuple(args.ylim),
+        figsize=tuple(args.figsize) if args.figsize else None,
+        dpi=args.dpi,
+        title_fontsize=args.title_fontsize,
+        label_fontsize=args.label_fontsize,
+        legend_fontsize=args.legend_fontsize,
+        legend_loc=args.legend_loc,
+        show_legend=not args.no_legend,
+        legend_labels=args.legend_labels,
+        grid=not args.no_grid,
+    )

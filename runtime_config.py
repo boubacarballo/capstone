@@ -110,6 +110,10 @@ def get_runtime_settings() -> Dict[str, Any]:
     appearance_mean_time = teleport_cfg.get("appearance_mean_time", 5.0)  # avg seconds until new subject appears
     lifetime_mean_time = teleport_cfg.get("lifetime_mean_time", 10.0)  # avg lifetime of active subject in seconds
 
+    # Constant/exponential ratio pool mode settings
+    active_ratio = teleport_cfg.get("active_ratio", 0.2)  # fraction of subjects active at initialisation
+    mean_swap_time = teleport_cfg.get("mean_swap_time", 10.0)  # mean seconds between consecutive single swaps
+
     # Subject movement settings (controls whether subject agents move around)
     movement_cfg = profile.get("movement") or {}
     movement_enabled = bool(movement_cfg.get("enabled", False))
@@ -159,6 +163,9 @@ def get_runtime_settings() -> Dict[str, Any]:
             "initial_active_count": initial_active_count,  # subjects active at start (dynamic_pool)
             "appearance_mean_time": appearance_mean_time,  # avg seconds until new subject appears (dynamic_pool)
             "lifetime_mean_time": lifetime_mean_time,  # avg lifetime of active subject (dynamic_pool / decay)
+            # constant_ratio_pool / exponential_swap_pool / exponential_one_time_pool settings
+            "active_ratio": active_ratio,
+            "mean_swap_time": mean_swap_time,
         },
     }
 

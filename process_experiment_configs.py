@@ -138,6 +138,27 @@ def plot_configs(
     output_path: Path | str | None = None,
     title: str = "Average Entailment Coverage Score Over Time",
     style: str = "line",
+    # --- axis labels ---
+    xlabel: str = "Time (seconds)",
+    ylabel: str = "Coverage",
+    # --- axis limits ---
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] = (-0.02, 1.08),
+    # --- figure ---
+    figsize: tuple[float, float] = (14, 8),
+    dpi: int = 150,
+    # --- fonts ---
+    title_fontsize: int = 28,
+    label_fontsize: int = 36,
+    tick_fontsize: int = 32,
+    legend_fontsize: int = 32,
+    # --- legend ---
+    legend_loc: str = "lower right",
+    show_legend: bool = True,
+    legend_labels: list[str] | None = None,
+    n_agents: list[int] | None = None,
+    # --- grid ---
+    grid: bool = True,
 ) -> plt.Figure:
     """
     Plot averaged coverage curves for one or more experiment configurations.
@@ -157,6 +178,40 @@ def plot_configs(
         ``"area"`` — each config is rendered as a filled area from 0 up to the
         mean, with the mean line drawn on top.  Multiple configs are layered
         with transparency so all fills remain visible.
+    xlabel :
+        X-axis label text.
+    ylabel :
+        Y-axis label text.
+    xlim :
+        ``(x_min, x_max)`` override for the x-axis.  When ``None`` the range
+        spans all timestamps.
+    ylim :
+        ``(y_min, y_max)`` for the y-axis.
+    figsize :
+        Figure width and height in inches, e.g. ``(16, 6)``.
+    dpi :
+        Resolution used when saving the figure.
+    title_fontsize :
+        Font size for the figure title.
+    label_fontsize :
+        Font size for axis labels.
+    tick_fontsize :
+        Font size for axis tick labels.
+    legend_fontsize :
+        Font size for legend text.
+    legend_loc :
+        Matplotlib location string for the legend (e.g. ``"upper left"``).
+    show_legend :
+        Set to ``False`` to suppress the legend entirely.
+    legend_labels :
+        Custom legend entry text, one string per config in *config_results*.
+        When ``None`` labels are auto-generated as ``"<name>  (n=N runs)"``.
+    n_agents :
+        Optional list of agent counts, one per config.  When provided, each
+        legend label gains a ``" – A agents"`` suffix regardless of whether
+        ``legend_labels`` is set, e.g. ``"Social learning – 25 agents"``.
+    grid :
+        Set to ``False`` to hide the background grid.
 
     Returns
     -------
@@ -165,7 +220,7 @@ def plot_configs(
     if style not in ("line", "area"):
         raise ValueError(f"style must be 'line' or 'area', got '{style}'")
 
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=figsize)
     color_cycle = plt.get_cmap("tab10").colors
 
     for idx, (timestamps, mean_scores, std_scores, label, n_runs) in enumerate(
@@ -174,7 +229,17 @@ def plot_configs(
         color = color_cycle[idx % len(color_cycle)]
         ts = timestamps.astype(float)
 
-        legend_label = f"{label}  (n={n_runs} runs)"
+        base_label = (
+            legend_labels[idx]
+            if legend_labels is not None and idx < len(legend_labels)
+            else f"{label}  (n={n_runs} runs)"
+        )
+        agents_suffix = (
+            f" – {n_agents[idx]} agents"
+            if n_agents is not None and idx < len(n_agents)
+            else ""
+        )
+        legend_label = f"{base_label}{agents_suffix}"
 
         if style == "area":
             pass  # handled in two-pass block below
@@ -218,7 +283,17 @@ def plot_configs(
         ):
             color = color_cycle[idx % len(color_cycle)]
             ts = timestamps.astype(float)
-            legend_label = f"{label}  (n={n_runs} runs)"
+            base_label = (
+                legend_labels[idx]
+                if legend_labels is not None and idx < len(legend_labels)
+                else f"{label}  (n={n_runs} runs)"
+            )
+            agents_suffix = (
+                f" – {n_agents[idx]} agents"
+                if n_agents is not None and idx < len(n_agents)
+                else ""
+            )
+            legend_label = f"{base_label}{agents_suffix}"
             ax.plot(
                 ts,
                 mean_scores,
@@ -228,19 +303,24 @@ def plot_configs(
                 zorder=2 + len(config_results) + idx,
             )
 
-    ax.set_xlabel("Time (seconds)", fontsize=11)
-    ax.set_ylabel("Coverage score  (entailed claims / total claims)", fontsize=11)
-    ax.set_ylim(-0.02, 1.08)
-    ax.grid(True, alpha=0.25, linestyle="--")
-    ax.legend(fontsize=9, loc="lower right", framealpha=0.8)
-    ax.set_title(title, fontsize=13, pad=8)
+    ax.set_xlabel(xlabel, fontsize=label_fontsize)
+    ax.set_ylabel(ylabel, fontsize=label_fontsize)
+    ax.tick_params(axis="both", labelsize=tick_fontsize)
+    ax.set_ylim(*ylim)
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    if grid:
+        ax.grid(True, alpha=0.25, linestyle="--")
+    if show_legend:
+        ax.legend(fontsize=legend_fontsize, loc=legend_loc, framealpha=0.8)
+    ax.set_title(title, fontsize=title_fontsize, pad=20)
 
     plt.tight_layout()
 
     if output_path is not None:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(output_path, dpi=150, bbox_inches="tight")
+        plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
         print(f"Plot saved → {output_path}")
     else:
         plt.show()
@@ -259,6 +339,27 @@ def main(
     title: str | None = None,
     nli_model=None,
     style: str = "line",
+    # --- axis labels ---
+    xlabel: str = "Time (seconds)",
+    ylabel: str = "Coverage",
+    # --- axis limits ---
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] = (-0.02, 1.08),
+    # --- figure ---
+    figsize: tuple[float, float] = (14, 8),
+    dpi: int = 150,
+    # --- fonts ---
+    title_fontsize: int = 28,
+    label_fontsize: int = 36,
+    tick_fontsize: int = 32,
+    legend_fontsize: int = 32,
+    # --- legend ---
+    legend_loc: str = "lower right",
+    show_legend: bool = True,
+    legend_labels: list[str] | None = None,
+    n_agents: list[int] | None = None,
+    # --- grid ---
+    grid: bool = True,
 ) -> list[tuple[np.ndarray, np.ndarray, np.ndarray, str, int]]:
     """
     Process one or more experiment configuration folders and plot averages.
@@ -270,14 +371,47 @@ def main(
         contain ``run_*`` subdirectories with ``experiment.json`` and
         ``metadata.json``.
     output_path :
-        Path to save the output plot (PNG).  Defaults to
-        ``<config_folder>/average_coverage.png`` when a single config is given.
+        Path to save the output plot (PDF).  Defaults to
+        ``<config_folder>/average_coverage.pdf`` when a single config is given.
     title :
         Custom plot title.
     nli_model :
         Pre-loaded CrossEncoder model.  Loaded automatically when ``None``.
     style : ``"line"`` | ``"area"``
         Plot style passed to :func:`plot_configs`.
+    xlabel :
+        X-axis label text.
+    ylabel :
+        Y-axis label text.
+    xlim :
+        ``(x_min, x_max)`` override for the x-axis.
+    ylim :
+        ``(y_min, y_max)`` for the y-axis.
+    figsize :
+        Figure width and height in inches.
+    dpi :
+        Resolution used when saving the figure.
+    title_fontsize :
+        Font size for the figure title.
+    label_fontsize :
+        Font size for axis labels.
+    tick_fontsize :
+        Font size for axis tick labels.
+    legend_fontsize :
+        Font size for legend text.
+    legend_loc :
+        Matplotlib legend location string.
+    show_legend :
+        Set to ``False`` to suppress the legend entirely.
+    legend_labels :
+        Custom legend entry text, one string per config folder.  When
+        ``None`` labels are auto-generated as ``"<name>  (n=N runs)"``.
+    n_agents :
+        Optional list of agent counts, one per config folder.  Always appended
+        to each legend label as ``" – A agents"``, even when ``legend_labels``
+        is provided explicitly.
+    grid :
+        Set to ``False`` to hide the background grid.
 
     Returns
     -------
@@ -297,13 +431,28 @@ def main(
 
     out = output_path
     if out is None and len(config_folders) == 1:
-        out = config_folders[0] / "average_coverage.png"
+        out = config_folders[0] / "average_coverage.pdf"
 
     plot_configs(
         config_results,
         output_path=out,
         title=title or "Average Entailment Coverage Score Over Time",
         style=style,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        xlim=xlim,
+        ylim=ylim,
+        figsize=figsize,
+        dpi=dpi,
+        title_fontsize=title_fontsize,
+        label_fontsize=label_fontsize,
+        tick_fontsize=tick_fontsize,
+        legend_fontsize=legend_fontsize,
+        legend_loc=legend_loc,
+        show_legend=show_legend,
+        legend_labels=legend_labels,
+        n_agents=n_agents,
+        grid=grid,
     )
 
     return config_results
@@ -333,26 +482,23 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
-        "--output",
-        "-o",
+        "--output", "-o",
         metavar="PATH",
         default=None,
         help=(
-            "Output path for the plot image (PNG). "
-            "Defaults to <config_folder>/average_coverage.png for a single "
+            "Output path for the plot (PDF). "
+            "Defaults to <config_folder>/average_coverage.pdf for a single "
             "config folder."
         ),
     )
     parser.add_argument(
-        "--title",
-        "-t",
+        "--title", "-t",
         metavar="TITLE",
         default=None,
         help="Custom title for the plot.",
     )
     parser.add_argument(
-        "--style",
-        "-s",
+        "--style", "-s",
         choices=["line", "area"],
         default="line",
         help=(
@@ -361,10 +507,147 @@ if __name__ == "__main__":
             "layering configs with transparency."
         ),
     )
+    # ---- axis labels ----
+    parser.add_argument(
+        "--xlabel",
+        metavar="LABEL",
+        default="Time (seconds)",
+        help="X-axis label. Default: 'Time (seconds)'.",
+    )
+    parser.add_argument(
+        "--ylabel",
+        metavar="LABEL",
+        default="Coverage",
+        help="Y-axis label.",
+    )
+    # ---- axis limits ----
+    parser.add_argument(
+        "--xlim",
+        nargs=2,
+        type=float,
+        metavar=("X_MIN", "X_MAX"),
+        default=None,
+        help="X-axis limits, e.g. --xlim 0 3600.",
+    )
+    parser.add_argument(
+        "--ylim",
+        nargs=2,
+        type=float,
+        metavar=("Y_MIN", "Y_MAX"),
+        default=[-0.02, 1.08],
+        help="Y-axis limits. Default: -0.02 1.08.",
+    )
+    # ---- figure ----
+    parser.add_argument(
+        "--figsize",
+        nargs=2,
+        type=float,
+        metavar=("WIDTH", "HEIGHT"),
+        default=[14, 8],
+        help="Figure size in inches, e.g. --figsize 16 6. Default: 14 8.",
+    )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=150,
+        help="Resolution (DPI) for the saved image. Default: 150.",
+    )
+    # ---- fonts ----
+    parser.add_argument(
+        "--title-fontsize",
+        type=int,
+        default=28,
+        metavar="PT",
+        help="Font size for the figure title. Default: 28.",
+    )
+    parser.add_argument(
+        "--label-fontsize",
+        type=int,
+        default=36,
+        metavar="PT",
+        help="Font size for axis labels. Default: 36.",
+    )
+    parser.add_argument(
+        "--tick-fontsize",
+        type=int,
+        default=32,
+        metavar="PT",
+        help="Font size for axis tick labels. Default: 32.",
+    )
+    parser.add_argument(
+        "--legend-fontsize",
+        type=int,
+        default=32,
+        metavar="PT",
+        help="Font size for legend text. Default: 32.",
+    )
+    # ---- legend ----
+    parser.add_argument(
+        "--legend-loc",
+        default="lower right",
+        metavar="LOC",
+        help=(
+            "Legend location. Valid values: 'upper right', 'upper left', "
+            "'lower left', 'lower right', 'center left', 'center right', "
+            "'upper center', 'lower center', 'center'. Default: 'lower right'."
+        ),
+    )
+    parser.add_argument(
+        "--no-legend",
+        action="store_true",
+        default=False,
+        help="Hide the legend.",
+    )
+    # ---- grid ----
+    parser.add_argument(
+        "--no-grid",
+        action="store_true",
+        default=False,
+        help="Hide the background grid.",
+    )
+    # ---- legend labels ----
+    parser.add_argument(
+        "--legend-labels",
+        nargs="+",
+        metavar="LABEL",
+        default=None,
+        help=(
+            "Custom legend labels, one per config folder (in the same order). "
+            "Example: --legend-labels 'Self learning' 'Social learning'"
+        ),
+    )
+    parser.add_argument(
+        "--n-agents",
+        nargs="+",
+        type=int,
+        metavar="N",
+        default=None,
+        help=(
+            "Number of agents, one value per config folder (in the same order). "
+            "Appended to auto-generated legend labels when --legend-labels is "
+            "not set. Example: --n-agents 10 25"
+        ),
+    )
+
     args = parser.parse_args()
     main(
         args.config_folders,
         output_path=args.output,
         title=args.title,
         style=args.style,
+        xlabel=args.xlabel,
+        ylabel=args.ylabel,
+        xlim=tuple(args.xlim) if args.xlim else None,
+        ylim=tuple(args.ylim),
+        figsize=tuple(args.figsize),
+        dpi=args.dpi,
+        title_fontsize=args.title_fontsize,
+        label_fontsize=args.label_fontsize,
+        tick_fontsize=args.tick_fontsize,
+        legend_fontsize=args.legend_fontsize,
+        legend_loc=args.legend_loc,
+        show_legend=not args.no_legend,
+        legend_labels=args.legend_labels,
+        n_agents=args.n_agents,
+        grid=not args.no_grid,
     )

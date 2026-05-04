@@ -1,0 +1,498 @@
+[
+  {
+    "config_name": "baseline_self vs baseline_social",
+    "self_label": "baseline_self",
+    "social_label": "baseline_social",
+    "n_self": 13,
+    "n_social": 11,
+    "alpha": 0.05,
+    "endpoint": {
+      "self_mean": 0.8838461538461538,
+      "social_mean": 0.9854545454545455,
+      "mann_whitney": {
+        "U": 1.0,
+        "p": 3.949188710351926e-05,
+        "significant": true
+      },
+      "welch_t": {
+        "t": -8.856255468899167,
+        "p": 1.8579364386635293e-08,
+        "significant": true
+      },
+      "cohens_d": -3.563291147825748,
+      "effect_label": "huge"
+    },
+    "auc": {
+      "self_mean": 328.38230769230773,
+      "social_mean": 387.02727272727276,
+      "mann_whitney": {
+        "U": 2.0,
+        "p": 6.398210543343718e-05,
+        "significant": true
+      }
+    },
+    "time_to_threshold": {
+      "0.5": {
+        "self_median": 81.0,
+        "social_median": 54.0,
+        "n_self_reached": 13,
+        "n_social_reached": 11,
+        "n_self_total": 13,
+        "n_social_total": 11,
+        "mann_whitney": {
+          "U": 132.5,
+          "p": 0.0004421227047673024,
+          "significant": true
+        }
+      },
+      "0.8": {
+        "self_median": 306.0,
+        "social_median": 153.0,
+        "n_self_reached": 13,
+        "n_social_reached": 11,
+        "n_self_total": 13,
+        "n_social_total": 11,
+        "mann_whitney": {
+          "U": 141.0,
+          "p": 6.351376393586243e-05,
+          "significant": true
+        }
+      }
+    },
+    "_label": "Baseline",
+    "_category": "Baseline",
+    "_info_ratio": "100%",
+    "_n_agents": 10,
+    "_n_subjects": 10
+  },
+  {
+    "config_name": "exponential_swap_pool_self vs exponential_swap_pool_social",
+    "self_label": "exponential_swap_pool_self",
+    "social_label": "exponential_swap_pool_social",
+    "n_self": 10,
+    "n_social": 10,
+    "alpha": 0.05,
+    "endpoint": {
+      "self_mean": 0.9790000000000001,
+      "social_mean": 0.976,
+      "mann_whitney": {
+        "U": 33.5,
+        "p": 0.21199846189416827,
+        "significant": false
+      },
+      "welch_t": {
+        "t": 0.2254938084008573,
+        "p": 0.8255936760061066,
+        "significant": false
+      },
+      "cohens_d": 0.10084389681792602,
+      "effect_label": "negligible"
+    },
+    "auc": {
+      "self_mean": 1351.6245000000001,
+      "social_mean": 1457.652,
+      "mann_whitney": {
+        "U": 12.0,
+        "p": 0.004586392080253494,
+        "significant": true
+      }
+    },
+    "time_to_threshold": {
+      "0.5": {
+        "self_median": 304.5,
+        "social_median": 135.0,
+        "n_self_reached": 10,
+        "n_social_reached": 10,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": {
+          "U": 100.0,
+          "p": 0.00018267179110955002,
+          "significant": true
+        }
+      },
+      "0.8": {
+        "self_median": 714.0,
+        "social_median": 574.5,
+        "n_self_reached": 10,
+        "n_social_reached": 10,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": {
+          "U": 71.0,
+          "p": 0.12122450301291661,
+          "significant": false
+        }
+      }
+    },
+    "_label": "Old Exp Swap 20%",
+    "_category": "Exp Swap (old)",
+    "_info_ratio": "20%",
+    "_n_agents": 10,
+    "_n_subjects": 10
+  },
+  {
+    "config_name": "exponential_swap_pool_self_50 vs exponential_swap_pool_social_50",
+    "self_label": "exponential_swap_pool_self_50",
+    "social_label": "exponential_swap_pool_social_50",
+    "n_self": 10,
+    "n_social": 10,
+    "alpha": 0.05,
+    "endpoint": {
+      "self_mean": 0.999,
+      "social_mean": 0.991,
+      "mann_whitney": {
+        "U": 50.5,
+        "p": 1.0,
+        "significant": false
+      },
+      "welch_t": {
+        "t": 0.8834522085987744,
+        "p": 0.39943633170271786,
+        "significant": false
+      },
+      "cohens_d": 0.39509183865983677,
+      "effect_label": "small"
+    },
+    "auc": {
+      "self_mean": 1875.4215,
+      "social_mean": 1906.4564999999998,
+      "mann_whitney": {
+        "U": 24.0,
+        "p": 0.05390255716938719,
+        "significant": false
+      }
+    },
+    "time_to_threshold": {
+      "0.5": {
+        "self_median": 139.5,
+        "social_median": 64.5,
+        "n_self_reached": 10,
+        "n_social_reached": 10,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": {
+          "U": 98.0,
+          "p": 0.00031471888167520335,
+          "significant": true
+        }
+      },
+      "0.8": {
+        "self_median": 336.0,
+        "social_median": 316.5,
+        "n_self_reached": 10,
+        "n_social_reached": 10,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": {
+          "U": 59.5,
+          "p": 0.49580527609991076,
+          "significant": false
+        }
+      }
+    },
+    "_label": "Old Exp Swap 50%",
+    "_category": "Exp Swap (old)",
+    "_info_ratio": "50%",
+    "_n_agents": 10,
+    "_n_subjects": 10
+  },
+  {
+    "config_name": "exponential_swap_pool_self_80 vs exponential_swap_pool_social_80",
+    "self_label": "exponential_swap_pool_self_80",
+    "social_label": "exponential_swap_pool_social_80",
+    "n_self": 10,
+    "n_social": 10,
+    "alpha": 0.05,
+    "endpoint": {
+      "self_mean": 0.991,
+      "social_mean": 1.0,
+      "mann_whitney": {
+        "U": 25.0,
+        "p": 0.014671582468514953,
+        "significant": true
+      },
+      "welch_t": {
+        "t": -2.3772174470791887,
+        "p": 0.041416150486262446,
+        "significant": true
+      },
+      "cohens_d": -1.0631239617935149,
+      "effect_label": "large"
+    },
+    "auc": {
+      "self_mean": 1925.1734999999996,
+      "social_mean": 1954.8629999999998,
+      "mann_whitney": {
+        "U": 30.0,
+        "p": 0.14046504815835498,
+        "significant": false
+      }
+    },
+    "time_to_threshold": {
+      "0.5": {
+        "self_median": 79.5,
+        "social_median": 60.0,
+        "n_self_reached": 10,
+        "n_social_reached": 10,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": {
+          "U": 86.5,
+          "p": 0.0062429128275734245,
+          "significant": true
+        }
+      },
+      "0.8": {
+        "self_median": 277.5,
+        "social_median": 226.5,
+        "n_self_reached": 10,
+        "n_social_reached": 10,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": {
+          "U": 56.5,
+          "p": 0.6500246299061012,
+          "significant": false
+        }
+      }
+    },
+    "_label": "Old Exp Swap 80%",
+    "_category": "Exp Swap (old)",
+    "_info_ratio": "80%",
+    "_n_agents": 10,
+    "_n_subjects": 10
+  },
+  {
+    "config_name": "exponential_one_time_pool_self vs exponential_one_time_pool_social",
+    "self_label": "exponential_one_time_pool_self",
+    "social_label": "exponential_one_time_pool_social",
+    "n_self": 10,
+    "n_social": 10,
+    "alpha": 0.05,
+    "endpoint": {
+      "self_mean": 0.164,
+      "social_mean": 0.589,
+      "mann_whitney": {
+        "U": 0.0,
+        "p": 0.00016493742195469044,
+        "significant": true
+      },
+      "welch_t": {
+        "t": -13.967204563266499,
+        "p": 4.80386790416435e-09,
+        "significant": true
+      },
+      "cohens_d": -6.246323771821831,
+      "effect_label": "huge"
+    },
+    "auc": {
+      "self_mean": 42.602999999999994,
+      "social_mean": 134.5455,
+      "mann_whitney": {
+        "U": 0.0,
+        "p": 0.00018063472080753515,
+        "significant": true
+      }
+    },
+    "time_to_threshold": {
+      "0.5": {
+        "self_median": null,
+        "social_median": 120.0,
+        "n_self_reached": 0,
+        "n_social_reached": 10,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": null
+      },
+      "0.8": {
+        "self_median": null,
+        "social_median": null,
+        "n_self_reached": 0,
+        "n_social_reached": 0,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": null
+      }
+    },
+    "_label": "Exp One-Time 20%",
+    "_category": "Exp One-Time",
+    "_info_ratio": "20%",
+    "_n_agents": 10,
+    "_n_subjects": 10
+  },
+  {
+    "config_name": "exponential_one_time_pool_self_10_percent vs exponential_one_time_pool_social_10_percent",
+    "self_label": "exponential_one_time_pool_self_10_percent",
+    "social_label": "exponential_one_time_pool_social_10_percent",
+    "n_self": 10,
+    "n_social": 10,
+    "alpha": 0.05,
+    "endpoint": {
+      "self_mean": 0.11000000000000001,
+      "social_mean": 0.41899999999999993,
+      "mann_whitney": {
+        "U": 0.0,
+        "p": 0.00016780051625813792,
+        "significant": true
+      },
+      "welch_t": {
+        "t": -7.331098975998391,
+        "p": 6.967131659498544e-06,
+        "significant": true
+      },
+      "cohens_d": -3.278567132022301,
+      "effect_label": "huge"
+    },
+    "auc": {
+      "self_mean": 27.213000000000005,
+      "social_mean": 97.56750000000001,
+      "mann_whitney": {
+        "U": 0.0,
+        "p": 0.00018267179110955002,
+        "significant": true
+      }
+    },
+    "time_to_threshold": {
+      "0.5": {
+        "self_median": null,
+        "social_median": 154.5,
+        "n_self_reached": 0,
+        "n_social_reached": 4,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": null
+      },
+      "0.8": {
+        "self_median": null,
+        "social_median": null,
+        "n_self_reached": 0,
+        "n_social_reached": 0,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": null
+      }
+    },
+    "_label": "Exp One-Time 10%",
+    "_category": "Exp One-Time",
+    "_info_ratio": "10%",
+    "_n_agents": 10,
+    "_n_subjects": 10
+  },
+  {
+    "config_name": "exponential_one_time_pool_self_10_percent_25_agents vs exponential_one_time_pool_social_10_percent_25_agents",
+    "self_label": "exponential_one_time_pool_self_10_percent_25_agents",
+    "social_label": "exponential_one_time_pool_social_10_percent_25_agents",
+    "n_self": 10,
+    "n_social": 10,
+    "alpha": 0.05,
+    "endpoint": {
+      "self_mean": 0.12600000000000003,
+      "social_mean": 0.388,
+      "mann_whitney": {
+        "U": 0.0,
+        "p": 0.00017265399688226737,
+        "significant": true
+      },
+      "welch_t": {
+        "t": -8.64833536586575,
+        "p": 4.0923859523748695e-06,
+        "significant": true
+      },
+      "cohens_d": -3.867653154058266,
+      "effect_label": "huge"
+    },
+    "auc": {
+      "self_mean": 30.994800000000005,
+      "social_mean": 80.71560000000001,
+      "mann_whitney": {
+        "U": 0.0,
+        "p": 0.00018267179110955002,
+        "significant": true
+      }
+    },
+    "time_to_threshold": {
+      "0.5": {
+        "self_median": null,
+        "social_median": null,
+        "n_self_reached": 0,
+        "n_social_reached": 0,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": null
+      },
+      "0.8": {
+        "self_median": null,
+        "social_median": null,
+        "n_self_reached": 0,
+        "n_social_reached": 0,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": null
+      }
+    },
+    "_label": "Exp One-Time 10% (25ag)",
+    "_category": "Exp One-Time",
+    "_info_ratio": "10%",
+    "_n_agents": 25,
+    "_n_subjects": 10
+  },
+  {
+    "config_name": "exponential_one_time_pool_self_30_percent_25_agents vs exponential_one_time_pool_social_30_percent_25_agents",
+    "self_label": "exponential_one_time_pool_self_30_percent_25_agents",
+    "social_label": "exponential_one_time_pool_social_30_percent_25_agents",
+    "n_self": 10,
+    "n_social": 10,
+    "alpha": 0.05,
+    "endpoint": {
+      "self_mean": 0.22880000000000003,
+      "social_mean": 0.4739999999999999,
+      "mann_whitney": {
+        "U": 2.5,
+        "p": 0.00037528572152295184,
+        "significant": true
+      },
+      "welch_t": {
+        "t": -6.448028904321225,
+        "p": 4.7547450121207545e-06,
+        "significant": true
+      },
+      "cohens_d": -2.883646190189149,
+      "effect_label": "huge"
+    },
+    "auc": {
+      "self_mean": 59.68680000000002,
+      "social_mean": 99.99360000000001,
+      "mann_whitney": {
+        "U": 1.0,
+        "p": 0.0002461281279052297,
+        "significant": true
+      }
+    },
+    "time_to_threshold": {
+      "0.5": {
+        "self_median": null,
+        "social_median": 246.0,
+        "n_self_reached": 0,
+        "n_social_reached": 4,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": null
+      },
+      "0.8": {
+        "self_median": null,
+        "social_median": null,
+        "n_self_reached": 0,
+        "n_social_reached": 0,
+        "n_self_total": 10,
+        "n_social_total": 10,
+        "mann_whitney": null
+      }
+    },
+    "_label": "Exp One-Time 30% (25ag)",
+    "_category": "Exp One-Time",
+    "_info_ratio": "30%",
+    "_n_agents": 25,
+    "_n_subjects": 10
+  }
+]
