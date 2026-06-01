@@ -158,8 +158,6 @@ uv run experiment.py
 # 10 sequential runs of the same profile
 bash run.sh
 
-# Watch the live score plot (enable in configs.yaml first)
-# visualization.live_plot.enabled: true
 uv run experiment.py
 ```
 
@@ -172,7 +170,6 @@ experiments/
         ├── experiment.json        # per-agent scores and summaries at every snapshot
         ├── metadata.json          # full config snapshot for reproducibility
         ├── scores_over_time.png   # average score trajectory
-        ├── live_plot.png          # live plot capture (if enabled)
         └── similarity_matrices/
             ├── agent_1_cosine.png # cosine heatmap: summary sentences vs GT facts
             ├── agent_1_bm25.png   # BM25 heatmap
@@ -279,7 +276,6 @@ Logs are written to `hpc/logs/<job_id>_<task_id>.{out,err}`.
 | `story_registry.py` | Alternative "Lost Artifact of Eldoria" narrative |
 | `runtime_config.py` | Resolves active profile and returns flat settings dict |
 | `helpers.py` | YAML loading utilities |
-| `visualize.py` | `LivePlot` — real-time score plot during the simulation |
 | `world.py` | Seeded environment builder for obstacles and sites |
 | `communication.py` | Low-level inter-agent message utilities |
 | `configs/configs.yaml` | All experiment profiles and global settings |

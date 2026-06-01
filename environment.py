@@ -1,22 +1,13 @@
 from __future__ import annotations
 
 from vi import Agent, Config, Simulation, Window, HeadlessSimulation
-from sentence_transformers import SentenceTransformer, util
 import json
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 from llm import LLM
 import pygame as pg
-from metrics import compute_bert_score, compute_score, compute_final_score, compute_nli_score, compute_similarity_matrix, compute_bm25_matrix, compute_nli_matrix, save_similarity_heatmap
-from visualize import LivePlot
-import queue
-from concurrent.futures import ThreadPoolExecutor, Future, as_completed
 from pathlib import Path
 from runtime_config import get_runtime_settings
 from datetime import datetime
 import random
-import math
 
 
 class Environment(Simulation):
@@ -25,17 +16,10 @@ class Environment(Simulation):
         super().__init__(config)
 
         self.runtime_settings = get_runtime_settings()
-        self.metric = self.runtime_settings["metric"]
         self.num_knowledge_agents = num_knowledge_agents
         self.num_subject_agents = num_subject_agents
         self.social_learning_enabled = self.runtime_settings["social_learning_enabled"]
-        self.profile_key = self.runtime_settings.get("profile_key")
 
-        live_plot_settings = (
-            (self.runtime_settings.get("visualization") or {}).get("live_plot") or {}
-        )
-        self.live_plot_enabled = bool(live_plot_settings.get("enabled", True))
-        
         # Fixed number of data points for consistency
         self.num_snapshots = int(self.runtime_settings.get("num_snapshots", 60))
         self.snapshot_interval_seconds = float(self.runtime_settings.get("snapshot_interval_seconds", 2.0))
@@ -44,32 +28,11 @@ class Environment(Simulation):
         # Subject visibility / information teleportation settings
         teleport_settings = self.runtime_settings.get("information_teleportation", {})
         self.teleportation_enabled = teleport_settings.get("enabled", False)
-        self.teleportation_mode = teleport_settings.get("mode", "shuffle")  # "shuffle", "decay", or "dynamic_pool"
-        self.subject_visibility_probability = teleport_settings.get("visibility_probability", 0.75)
-        self.decay_count = teleport_settings.get("decay_count", 3)  # subjects to remove per interval (decay mode)
-        self.decay_probability = teleport_settings.get("decay_probability", 0.08)  # legacy per-subject leave probability
-        self.visibility_interval = teleport_settings.get("interval_seconds", 5.0)
-        self.next_visibility_time = self.visibility_interval
-        
-        # Dynamic pool / continuous decay mode settings
-        self.initial_active_count = teleport_settings.get("initial_active_count", 5)
-        self.appearance_mean_time = teleport_settings.get("appearance_mean_time", 5.0)
-        self.lifetime_mean_time = teleport_settings.get("lifetime_mean_time", 10.0)
-        
-        # Constant ratio pool mode settings
+        self.teleportation_mode = teleport_settings.get("mode")
         self.active_ratio = teleport_settings.get("active_ratio", 0.2)
-
-        # Exponential swap pool mode settings
         self.mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
-        self.next_swap_time = None  # Scheduled time of next single swap (exponential_swap_pool only)
-        self._appeared_subjects: set[int] = set()  # object ids of subjects that have ever been active (one_time_pool)
-        
-        # Subject lifetime state
-        # - Used by dynamic_pool mode (with snippet pool + recycling)
-        # - Also reused by decay mode (no recycling, just one-shot disappearance)
-        self.snippet_pool = []  # Inactive snippets waiting to appear (dynamic_pool only)
-        self.next_appearance_time = None  # When the next snippet will appear (dynamic_pool only)
-        self.subject_lifetimes = {}  # Maps subject agent -> expiry time in seconds
+        self.next_swap_time = None
+        self._appeared_subjects: set[int] = set()
 
         ground_truth_bundle = self.runtime_settings["ground_truth"]
         self.ground_truth_key = ground_truth_bundle.get("name")
@@ -78,17 +41,7 @@ class Environment(Simulation):
         self.ground_truth_summary = ground_truth_bundle.get("summary", "")
  
         self.start_time = pg.time.get_ticks()
-        self.last_plot_time = self.start_time
         self.tick_count = 0
-
-        self.executor = ThreadPoolExecutor(max_workers=10)
-        self.score_queue = queue.Queue()
-        self.pending_score_futures: list[Future] = []  # Track pending score computations
-        self.experiment_duration = 2000
-        self.plot: LivePlot | None = None
-
-        # Precompute ground-truth facts once for efficiency
-        
         self._experiment_saved = False
 
     def _HeadlessSimulation__update_positions(self):
@@ -144,13 +97,12 @@ class Environment(Simulation):
             return ""
         
         return cleaned
-    def run(self, plot: LivePlot | None = None):
+    def run(self):
         """
         Run the simulation until all snapshots are recorded.
         Duration = num_snapshots × snapshot_interval_seconds
         """
         self._running = True
-        self.plot = plot if (plot is not None and self.live_plot_enabled) else None
         self.next_snapshot_time = self.snapshot_interval_seconds
         
         total_duration = self.num_snapshots * self.snapshot_interval_seconds
@@ -162,27 +114,11 @@ class Environment(Simulation):
 
             elapsed_seconds = self._elapsed_sim_seconds()
             
-            # Information teleportation / information decay (can be combined with movement in hybrid profiles)
             if self.teleportation_enabled:
-                if self.teleportation_mode == "dynamic_pool":
-                    # Dynamic pool mode: continuous checking (not interval-based)
-                    self.dynamic_pool_update()
-                elif self.teleportation_mode == "constant_ratio_pool":
-                    # Constant ratio pool: maintain fixed % of subjects active at all times
-                    self.constant_ratio_pool_update()
-                elif self.teleportation_mode == "exponential_swap_pool":
-                    # Single global Poisson timer: swap one subject at a time
-                    self.exponential_swap_pool_update()
-                elif self.teleportation_mode == "exponential_one_time_pool":
-                    # Like exponential_swap_pool but subjects are permanently retired after swap-out
-                    self.exponential_one_time_pool_update()
-                elif self.teleportation_mode == "decay":
-                    # Continuous-time exponential decay of subjects (no reappearance)
-                    self.decay_subject_visibility()
-                elif elapsed_seconds >= self.next_visibility_time:
-                    # Default "shuffle" visibility pattern at fixed intervals
-                    self.shuffle_subject_visibility()
-                    self.next_visibility_time += self.visibility_interval
+                if self.teleportation_mode == "dynamic_pool_with_reemission":
+                    self.dynamic_pool_with_reemission_update()
+                elif self.teleportation_mode == "dynamic_pool_without_reemission":
+                    self.dynamic_pool_without_reemission_update()
             
             # Check if it's time for a snapshot
             if elapsed_seconds >= self.next_snapshot_time and self.snapshots_recorded < self.num_snapshots:
@@ -195,96 +131,21 @@ class Environment(Simulation):
                 self.stop()
                 break
 
-            self.process_score_queue()
-
-        # Wait for all pending score computations to finish
-        run_plot = self.plot
-        self.wait_for_pending_scores()
-        self.save_experiment_data(run_plot)
-        if run_plot is not None:
-            run_plot.show()
+        self.save_experiment_data()
 
         return self._metrics
 
 
-    def process_score_queue(self):
-        while not self.score_queue.empty():
-            try:
-                agent_id, timestamp, score = self.score_queue.get_nowait()
-                if self.plot is not None:
-                    self.plot.update(timestamp, score, agent_id=agent_id)
-            except queue.Empty:
-                break
-
-
-
     def record_snapshot(self):
         """Record a snapshot for ALL agents. Always records exactly one data point per agent."""
-        current_time = pg.time.get_ticks()
-        snapshot_index = self.snapshots_recorded  # Current snapshot index (0-based)
-        
         for agent in self._agents:
             if agent.role == "KNOWLEDGE_AGENT":
                 summary = " ".join(agent.t_summary)
-                agent_id = agent.id
-                tick = current_time
-                
-                # Clean the summary
                 cleaned_summary = self.clean_llm_result(summary)
-                
-                # Initialize score_by_index dict if not exists
-                if not hasattr(agent, 'score_by_index'):
-                    agent.score_by_index = {}
-                
-                # ALWAYS append to summary_history (empty string if no valid summary)
                 agent.summary_history.append(cleaned_summary if cleaned_summary else "")
-                
-                if not cleaned_summary:
-                    # No valid summary - record 0.0 score at this index
-                    agent.score_by_index[snapshot_index] = 0.0
-                    self.score_queue.put((agent_id, tick, 0.0))
-                else:
-                    # Valid summary - compute score asynchronously
-                    metric_name = (self.metric or "").lower()
-                    if metric_name == "cosine-bert":
-                        future = self.executor.submit(compute_score, cleaned_summary, self.ground_truth_facts)
-                    elif metric_name == "bert-score":
-                        future = self.executor.submit(compute_bert_score, cleaned_summary, self.ground_truth_facts)
-                    elif metric_name == "cosine-bm25":
-                        future = self.executor.submit(compute_final_score, cleaned_summary, self.ground_truth_facts)
-                    elif metric_name == "nli":
-                        future = self.executor.submit(compute_nli_score, cleaned_summary, self.ground_truth_facts)
-                    else:
-                        raise ValueError(f"Invalid metric: {self.metric}")
-                    
-                    # Capture snapshot_index for this callback
-                    knowledge_agent = agent
-                    idx = snapshot_index
-                    def on_complete(fut, knowledge_agent=knowledge_agent, aid=agent_id, t=tick, idx=idx):
-                        try:
-                            score = fut.result()
-                            knowledge_agent.score_by_index[idx] = score  # Store by index, not append
-                            self.score_queue.put((aid, t, score))
-                        except Exception as e:
-                            print(f"Error computing score for agent {aid}: {e}")
-                            knowledge_agent.score_by_index[idx] = 0.0  # Fallback
-                    
-                    future.add_done_callback(lambda f, knowledge_agent=knowledge_agent, aid=agent_id, t=tick, idx=idx: on_complete(f, knowledge_agent, aid, t, idx))
-                    self.pending_score_futures.append(future)
-        
+
         self.snapshots_recorded += 1
         print(f"📸 Snapshot {self.snapshots_recorded}/{self.num_snapshots} recorded")
-
-    def wait_for_pending_scores(self, timeout: float = 30.0):
-        """Wait for all pending score computations to complete."""
-        if not self.pending_score_futures:
-            return
-        print(f"⏳ Waiting for {len(self.pending_score_futures)} pending score computations...")
-        for future in as_completed(self.pending_score_futures, timeout=timeout):
-            pass  # Callbacks already handle the results
-        # Clean up completed futures
-        self.pending_score_futures = [f for f in self.pending_score_futures if not f.done()]
-        print("✅ All score computations complete.")
 
     def _elapsed_sim_seconds(self) -> float:
         fps = getattr(self.config, "fps", None) if hasattr(self, "config") else None
@@ -297,329 +158,7 @@ class Environment(Simulation):
                 pass
         return (pg.time.get_ticks() - self.start_time) / 1000.0
 
-    def shuffle_subject_visibility(self):
-        """
-        Randomly toggle visibility of subject agents based on visibility_probability.
-        This implements 'information teleportation' - subjects appear/disappear over time.
-        """
-        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
-        if not subjects:
-            return
-        
-        visible_count = 0
-        for subject in subjects:
-            is_visible = random.random() < self.subject_visibility_probability
-            subject.set_visible(is_visible)
-            if is_visible:
-                visible_count += 1
-        
-        print(f"🔀 Shuffled subject visibility: {visible_count}/{len(subjects)} visible ({self.subject_visibility_probability:.0%} probability)")
-
-    def fixed_decay_subject_visibility(self):
-        """
-        Legacy fixed-count decay:
-        Permanently hide a fixed number of visible subjects at each decay step.
-        """
-        visible_subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT" and getattr(a, "visible", True)]
-        if not visible_subjects:
-            print("⚠️ No visible subjects remaining to decay")
-            return
-        
-        # Randomly select subjects to hide (up to decay_count or remaining visible)
-        num_to_hide = min(self.decay_count, len(visible_subjects))
-        subjects_to_hide = random.sample(visible_subjects, num_to_hide)
-        
-        for subject in subjects_to_hide:
-            subject.set_visible(False)
-        
-        remaining_visible = len(visible_subjects) - num_to_hide
-        total_subjects = len([a for a in self._agents if getattr(a, "role", None) == "SUBJECT"])
-        print(f"📉 Fixed decay: {num_to_hide} hidden, {remaining_visible}/{total_subjects} still visible")
-
-    def decay_subject_visibility(self):
-        """
-        Continuous-time exponential decay of subject visibility, similar in spirit
-        to dynamic_pool but without reappearing snippets:
-
-        - Each SUBJECT agent is assigned an independent exponential lifetime
-          with rate λ = 1 / lifetime_mean_time (if provided).
-        - When the current simulated time exceeds that agent's expiry time,
-          the subject becomes permanently invisible.
-        """
-        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
-        if not subjects:
-            return
-
-        current_time = self._elapsed_sim_seconds()
-
-        # Determine exponential rate λ. Prefer explicit lifetime_mean_time;
-        # if it's not set, approximate from decay_probability / interval.
-        lambda_rate = 0.0
-        if getattr(self, "lifetime_mean_time", None) and self.lifetime_mean_time > 0:
-            lambda_rate = 1.0 / float(self.lifetime_mean_time)
-        elif self.decay_probability > 0 and self.visibility_interval > 0:
-            approx_mean = float(self.visibility_interval) / float(self.decay_probability)
-            lambda_rate = 1.0 / approx_mean
-
-        if lambda_rate <= 0.0:
-            # No meaningful decay configured
-            return
-
-        # Initialize lifetimes for any visible subject that doesn't yet have one
-        for agent in subjects:
-            if getattr(agent, "visible", True) and agent not in self.subject_lifetimes:
-                lifetime = random.expovariate(lambda_rate)
-                self.subject_lifetimes[agent] = current_time + lifetime
-
-        # Check for expired subjects
-        expired_subjects = []
-        for subject, expiry_time in list(self.subject_lifetimes.items()):
-            if (
-                getattr(subject, "role", None) == "SUBJECT"
-                and getattr(subject, "visible", True)
-                and current_time >= expiry_time
-            ):
-                expired_subjects.append(subject)
-
-        for subject in expired_subjects:
-            subject.set_visible(False)
-            # For pure decay, do not recycle snippets back into any pool
-            if subject in self.subject_lifetimes:
-                del self.subject_lifetimes[subject]
-
-        if expired_subjects:
-            remaining_visible = len(
-                [
-                    a
-                    for a in self._agents
-                    if getattr(a, "role", None) == "SUBJECT" and getattr(a, "visible", True)
-                ]
-            )
-            total_subjects = len(
-                [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
-            )
-            print(
-                f"🎲 Probabilistic decay: {len(expired_subjects)} subject(s) disappeared "
-                f"(continuous-time exponential), {remaining_visible}/{total_subjects} still visible"
-            )
-
-    def initialize_dynamic_pool(self, snippet_pool: list):
-        """
-        Initialize the dynamic pool mode with a pool of inactive snippets.
-        Called by experiment.py after spawning initial active subjects.
-        """
-        self.snippet_pool = list(snippet_pool)  # Copy the pool
-        random.shuffle(self.snippet_pool)  # Shuffle for randomness
-        
-        # Schedule first appearance using exponential distribution
-        self._schedule_next_appearance()
-        
-        # Assign lifetimes to all currently active subjects
-        current_time = self._elapsed_sim_seconds()
-        for agent in self._agents:
-            if getattr(agent, "role", None) == "SUBJECT" and getattr(agent, "visible", True):
-                lifetime = random.expovariate(1.0 / self.lifetime_mean_time)
-                self.subject_lifetimes[agent] = current_time + lifetime
-        
-        print(f"🏊 Dynamic pool initialized: {len(self.snippet_pool)} snippets in pool, "
-              f"{len(self.subject_lifetimes)} active subjects")
-
-    def initialize_constant_ratio_pool(self):
-        """
-        Initialize constant ratio pool mode.
-        All subjects are already spawned; this method makes exactly
-        round(active_ratio * total) of them visible and hides the rest.
-        Visible subjects each receive an independent exponential lifetime.
-        """
-        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
-        total = len(subjects)
-        target_active = max(1, round(self.active_ratio * total))
-
-        random.shuffle(subjects)
-        active_subjects = subjects[:target_active]
-        inactive_subjects = subjects[target_active:]
-
-        env_width = self.runtime_settings["environment"]["width"]
-        env_height = self.runtime_settings["environment"]["height"]
-
-        current_time = self._elapsed_sim_seconds()
-        for subject in active_subjects:
-            x = random.uniform(50, env_width - 50)
-            y = random.uniform(50, env_height - 50)
-            subject.pos.update((x, y))
-            subject.set_visible(True)
-            lifetime = random.expovariate(1.0 / self.lifetime_mean_time)
-            self.subject_lifetimes[subject] = current_time + lifetime
-
-        for subject in inactive_subjects:
-            subject.set_visible(False)
-
-        print(f"Constant ratio pool initialized: {target_active}/{total} subjects active "
-              f"({self.active_ratio:.0%} target ratio)")
-
-    def _schedule_next_appearance(self):
-        """Schedule when the next snippet from the pool will appear."""
-        if self.snippet_pool:
-            delay = random.expovariate(1.0 / self.appearance_mean_time)
-            self.next_appearance_time = self._elapsed_sim_seconds() + delay
-        else:
-            self.next_appearance_time = None
-
-    def _spawn_subject_from_pool(self):
-        """Spawn a new subject agent from the snippet pool at a random position."""
-        if not self.snippet_pool:
-            return None
-        
-        snippet = self.snippet_pool.pop(0)
-        
-        # Import here to avoid circular imports
-        from subjects import SubjectAgent
-        
-        # Spawn the agent
-        self.batch_spawn_agents(1, SubjectAgent, images=["images/villager.png"])
-        
-        # Find the newly spawned subject and configure it
-        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
-        if subjects:
-            new_subject = subjects[-1]
-            new_subject.info = snippet
-            new_subject.set_visible(True)
-            
-            # Random position within environment bounds
-            env_width = self.runtime_settings["environment"]["width"]
-            env_height = self.runtime_settings["environment"]["height"]
-            x = random.uniform(50, env_width - 50)
-            y = random.uniform(50, env_height - 50)
-            new_subject.pos.update((x, y))
-            
-            # Assign lifetime
-            current_time = self._elapsed_sim_seconds()
-            lifetime = random.expovariate(1.0 / self.lifetime_mean_time)
-            self.subject_lifetimes[new_subject] = current_time + lifetime
-            
-            return new_subject
-        return None
-
-    def dynamic_pool_update(self):
-        """
-        Update the dynamic pool: check for expired subjects (disappear) and new appearances.
-        Called continuously during the simulation loop.
-        """
-        current_time = self._elapsed_sim_seconds()
-        
-        # Check for subjects whose lifetime has expired (disappearances)
-        expired_subjects = []
-        for subject, expiry_time in list(self.subject_lifetimes.items()):
-            if current_time >= expiry_time and getattr(subject, "visible", True):
-                expired_subjects.append(subject)
-        
-        # Process disappearances
-        for subject in expired_subjects:
-            subject.set_visible(False)
-            # Return snippet to the pool
-            snippet = getattr(subject, "info", "")
-            if snippet:
-                self.snippet_pool.append(snippet)
-            # Remove from lifetime tracking
-            del self.subject_lifetimes[subject]
-        
-        if expired_subjects:
-            active_count = len([a for a in self._agents if getattr(a, "role", None) == "SUBJECT" and getattr(a, "visible", True)])
-            print(f"👋 {len(expired_subjects)} subject(s) disappeared (lifetime expired). "
-                  f"Pool: {len(self.snippet_pool)}, Active: {active_count}")
-        
-        # Check for new appearances
-        if self.next_appearance_time is not None and current_time >= self.next_appearance_time:
-            new_subject = self._spawn_subject_from_pool()
-            if new_subject:
-                active_count = len([a for a in self._agents if getattr(a, "role", None) == "SUBJECT" and getattr(a, "visible", True)])
-                print(f"New subject appeared from pool. Pool: {len(self.snippet_pool)}, Active: {active_count}")
-            
-            # Schedule next appearance
-            self._schedule_next_appearance()
-    
-    def constant_ratio_pool_update(self):
-        """
-        Maintain a constant active_ratio of all subject agents visible.
-        Called every tick. When any active subject's lifetime expires it is
-        hidden and the same number of randomly chosen inactive subjects are
-        immediately made visible, restoring the target count.
-        """
-        current_time = self._elapsed_sim_seconds()
-        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
-        total = len(subjects)
-        if not total:
-            return
-
-        target_active = max(1, round(self.active_ratio * total))
-
-        expired = [
-            s for s, exp in list(self.subject_lifetimes.items())
-            if current_time >= exp and getattr(s, "visible", True)
-        ]
-        for subject in expired:
-            subject.set_visible(False)
-            del self.subject_lifetimes[subject]
-
-        if expired:
-            # Immediately replace each expired subject with a random inactive one
-            inactive = [s for s in subjects if not getattr(s, "visible", True)]
-            currently_active = [s for s in subjects if getattr(s, "visible", True)]
-            needed = target_active - len(currently_active)
-            to_activate = random.sample(inactive, min(needed, len(inactive)))
-
-            env_width = self.runtime_settings["environment"]["width"]
-            env_height = self.runtime_settings["environment"]["height"]
- 
-            for subject in to_activate:
-                x = random.uniform(50, env_width - 50)
-                y = random.uniform(50, env_height - 50)
-                subject.pos.update((x, y))
-                subject.set_visible(True)
-                lifetime = random.expovariate(1.0 / self.lifetime_mean_time)
-                self.subject_lifetimes[subject] = current_time + lifetime
-
-            new_active_count = len([s for s in subjects if getattr(s, "visible", True)])
-            print(f"🔄 Ratio pool: {len(expired)} expired → {len(to_activate)} activated. "
-                  f"Active: {new_active_count}/{total} (target: {target_active})")
-
-
-    def constant_ratio_pool_update_with_kill(self):
-
-        current_time = self._elapsed_sim_seconds()
-        subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
-        total = len(subjects)
-        if not total:
-            return
-
-        target_active = max(1, round(self.active_ratio * total)) #20%
-        random_number = random.randint(0, 1)
-
-        kill_probablitity = 1/total
-        if random_number < kill_probablitity:
-            subject = random.choice(subjects)
-            subject.set_visible(False)
-            # Immediately replace each expired subject with a random inactive one
-
-            inactive = [s for s in subjects if not getattr(s, "visible", True)]
-            currently_active = [s for s in subjects if getattr(s, "visible", True)]
-            needed = target_active - len(currently_active)
-            to_activate = random.sample(inactive, min(needed, len(inactive)))
-
-            env_width = self.runtime_settings["environment"]["width"]
-            env_height = self.runtime_settings["environment"]["height"]
-
-            for subject in to_activate:
-                x = random.uniform(50, env_width - 50)
-                y = random.uniform(50, env_height - 50)
-                subject.pos.update((x, y))
-                subject.set_visible(True)
-                lifetime = random.expovariate(1.0 / self.lifetime_mean_time)
-                self.subject_lifetimes[subject] = current_time + lifetime
-
-            new_active_count = len([s for s in subjects if getattr(s, "visible", True)])
-
-    def initialize_exponential_swap_pool(self):
+    def initialize_dynamic_pool_with_reemission(self):
         """
         Initialize exponential swap pool mode.
         All subjects are already spawned. Activate round(active_ratio * N) of them
@@ -650,10 +189,10 @@ class Environment(Simulation):
         current_time = self._elapsed_sim_seconds()
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
-        print(f"Exponential swap pool initialized: {target_active}/{total} subjects active "
+        print(f"Dynamic pool (with reemission) initialized: {target_active}/{total} subjects active "
               f"({self.active_ratio:.0%} ratio), first swap at t={self.next_swap_time:.2f}s")
 
-    def exponential_swap_pool_update(self):
+    def dynamic_pool_with_reemission_update(self):
         """
         Single-event Poisson swap: do nothing until next_swap_time is reached, then
         hide exactly one random active subject and show exactly one random inactive subject.
@@ -681,14 +220,14 @@ class Environment(Simulation):
             incoming.set_visible(True)
 
             new_active_count = len(active)  # net change is zero: −1 +1
-            print(f"Exponential swap: 1 out, 1 in. Active: {new_active_count}/{len(subjects)}")
+            print(f"Dynamic pool swap (reemission): 1 out, 1 in. Active: {new_active_count}/{len(subjects)}")
 
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
-    def initialize_exponential_one_time_pool(self):
+    def initialize_dynamic_pool_without_reemission(self):
         """
         Initialize exponential one-time pool mode.
-        Identical to initialize_exponential_swap_pool, but the initially-active subjects
+        Identical to initialize_dynamic_pool_with_reemission, but the initially-active subjects
         are recorded in _appeared_subjects so they can never re-enter once swapped out.
         """
         subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
@@ -716,11 +255,11 @@ class Environment(Simulation):
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
         never_appeared_count = len(inactive_subjects)
-        print(f"Exponential one-time pool initialized: {target_active}/{total} subjects active "
+        print(f"Dynamic pool (without reemission) initialized: {target_active}/{total} subjects active "
               f"({self.active_ratio:.0%} ratio), {never_appeared_count} never-appeared in reserve, "
               f"first swap at t={self.next_swap_time:.2f}s")
 
-    def exponential_one_time_pool_update(self):
+    def dynamic_pool_without_reemission_update(self):
         """
         Single-event Poisson swap with permanent retirement.
         When the timer fires: one random active subject is hidden and permanently retired
@@ -758,7 +297,7 @@ class Environment(Simulation):
 
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
-    def save_experiment_data(self, plot: LivePlot):
+    def save_experiment_data(self):
         """Save experiment data and plot to the experiments directory"""
         if self._experiment_saved:
             print("ℹ️ Experiment data already saved; skipping duplicate save.")
@@ -768,8 +307,7 @@ class Environment(Simulation):
             interval = self.snapshot_interval_seconds
             timestamps = [int((i + 1) * interval) for i in range(self.num_snapshots)]
             
-            # Build data structure with timestamp -> score/summary maps
-            data = {            
+            data = {
                 "timestamps": timestamps,
                 "snapshot_interval_seconds": interval,
                 "num_snapshots": self.num_snapshots,
@@ -780,29 +318,26 @@ class Environment(Simulation):
                 if getattr(agent, "role", None) == "KNOWLEDGE_AGENT":
                     agent_key = str(agent.id)
                     summaries = list(getattr(agent, "summary_history", []))
-                    score_by_index = getattr(agent, "score_by_index", {})
-                    
-                    # Build scores array from indexed dict (ensures correct order)
-                    scores = [score_by_index.get(i, 0.0) for i in range(len(timestamps))]
-                    
-                    print(f"Agent {agent_key}: {len(summaries)} summaries, {len(scores)} scores")
-                    
-                    # Create timestamp -> value maps
+                    print(f"Agent {agent_key}: {len(summaries)} summaries")
                     data["agents"][agent_key] = {
-                        "scores": {str(t): scores[i] if i < len(scores) else 0.0 for i, t in enumerate(timestamps)},
                         "summaries": {str(t): summaries[i] if i < len(summaries) else "" for i, t in enumerate(timestamps)},
                         "llm_context": agent.llm.get_context_stats(),
                     }
 
             base_dir = Path("experiments")
-            profile_key = (self.profile_key or "unspecified").replace(" ", "_")
+            active_experiment = self.runtime_settings.get("active_experiment", "unspecified")
+            learning_mode = self.runtime_settings.get("learning_mode", "self")
             swarm_type = self.runtime_settings.get("swarm_type") or ("social_learning" if self.social_learning_enabled else "self_learning")
-            if self.num_knowledge_agents == 1:
-                cohort_dirname = "single_agent"
-            else:
-                cohort_dirname = f"{swarm_type}_swarm"
 
-            profile_dir = base_dir / profile_key
+            teleport = self.runtime_settings.get("information_teleportation", {})
+            if teleport.get("enabled"):
+                active_ratio = teleport.get("active_ratio", 0.2)
+                mean_swap_time = teleport.get("mean_swap_time", 10.0)
+                run_dirname = f"{active_experiment}__{learning_mode}__ratio{active_ratio}__swap{int(mean_swap_time)}s"
+            else:
+                run_dirname = f"{active_experiment}__{learning_mode}"
+
+            profile_dir = base_dir / run_dirname
             profile_dir.mkdir(parents=True, exist_ok=True)
 
             existing_runs = [p for p in profile_dir.iterdir() if p.is_dir() and p.name.startswith("run_")]
@@ -818,13 +353,12 @@ class Environment(Simulation):
 
             metadata = {
                 "created_at_utc": datetime.utcnow().isoformat() + "Z",
-                "profile": profile_key,
+                "active_experiment": active_experiment,
+                "learning_mode": learning_mode,
                 "swarm_type": swarm_type,
-                "cohort_dirname": cohort_dirname,
                 "num_knowledge_agents": self.num_knowledge_agents,
                 "num_subject_agents": self.num_subject_agents,
                 "social_learning_enabled": self.social_learning_enabled,
-                "metric": self.metric,
                 "num_snapshots": self.num_snapshots,
                 "ground_truth_key": self.ground_truth_key,
                 "ground_truth_summary": self.ground_truth_summary,
@@ -833,159 +367,19 @@ class Environment(Simulation):
                 "information_teleportation": {
                     "enabled": self.teleportation_enabled,
                     "mode": self.teleportation_mode,
-                    "visibility_probability": self.subject_visibility_probability,
-                    "decay_count": self.decay_count,
-                    "decay_probability": self.decay_probability,
-                    "interval_seconds": self.visibility_interval,
-                    "initial_active_count": self.initial_active_count,
-                    "appearance_mean_time": self.appearance_mean_time,
-                    "lifetime_mean_time": self.lifetime_mean_time,
                     "active_ratio": self.active_ratio,
                     "mean_swap_time": self.mean_swap_time,
                 } if self.teleportation_enabled else {"enabled": False},
                 "movement": self.runtime_settings.get("movement", {}),
             }
  
-            # Compute final similarity matrices and generate heatmap images
-            matrices_dir = run_dir / "similarity_matrices"
-            matrices_dir.mkdir(parents=True, exist_ok=True)
-            for agent_key, agent_data in data["agents"].items():
-                summaries_map = agent_data["summaries"]
-                final_summary = ""
-                for t in reversed(timestamps):
-                    s = summaries_map.get(str(t), "")
-                    if s.strip():
-                        final_summary = s
-                        break
+            output = {**metadata, **data}
+            run_path = run_dir / "run.json"
+            with open(run_path, "w", encoding="utf-8") as f:
+                json.dump(output, f, ensure_ascii=False, indent=2)
 
-                cosine_data = compute_similarity_matrix(final_summary, self.ground_truth_facts)
-                bm25_data = compute_bm25_matrix(final_summary, self.ground_truth_facts)
-                agent_data["final_cosine_matrix"] = cosine_data
-                agent_data["final_bm25_matrix"] = bm25_data
-
-                try:
-                    cosine_path = matrices_dir / f"agent_{agent_key}_cosine.png"
-                    save_similarity_heatmap(cosine_data, cosine_path, agent_id=agent_key, metric_label="Cosine Similarity")
-                    bm25_path = matrices_dir / f"agent_{agent_key}_bm25.png"
-                    save_similarity_heatmap(bm25_data, bm25_path, agent_id=agent_key, metric_label="BM25 Score")
-                    print(f"Saved cosine + BM25 heatmaps for agent {agent_key}")
-                except Exception as e_hm:
-                    print(f"Failed to save heatmap for agent {agent_key}: {e_hm}")
-
-                if (self.metric or "").lower() == "nli":
-                    try:
-                        nli_data = compute_nli_matrix(final_summary, self.ground_truth_facts)
-                        agent_data["final_nli_matrix"] = nli_data
-                        nli_path = matrices_dir / f"agent_{agent_key}_nli.png"
-                        save_similarity_heatmap(nli_data, nli_path, agent_id=agent_key, metric_label="NLI Entailment")
-                        print(f"Saved NLI heatmap for agent {agent_key}")
-                    except Exception as e_nli:
-                        print(f"Failed to save NLI heatmap for agent {agent_key}: {e_nli}")
-
-            # Save JSON
-            json_path = run_dir / "experiment.json"
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-
-            metadata_path = run_dir / "metadata.json"
-            with open(metadata_path, "w", encoding="utf-8") as meta_file:
-                json.dump(metadata, meta_file, ensure_ascii=False, indent=2)
-
-            # Save live plot image (if available)
-            if plot is not None:
-                img_path = run_dir / "live_plot.png"
-                try:
-                    plot.save(img_path)
-                except Exception as e_img:
-                    print(f"⚠️ Failed to save live plot image: {e_img}")
-            
-            # Generate and save aesthetic score plot
-            self._save_score_plot(data, run_dir, swarm_type)
- 
             print(f"💾 Saved experiment to {run_dir}")
             self._experiment_saved = True
         except Exception as e:
             print(f"⚠️ Failed to save experiment data: {e}")
 
-    def _save_score_plot(self, data: dict, run_dir: Path, swarm_type: str):
-        """Generate and save an aesthetic plot of average score over time."""
-        try:
-            # Extract data
-            timestamps = data["timestamps"]
-            agents_data = data["agents"]
-            num_agents = len(agents_data)
-            
-            # Collect all scores and compute mean
-            all_scores = []
-            for agent_id, agent_data in agents_data.items():
-                scores = [agent_data["scores"].get(str(t), 0.0) for t in timestamps]
-                all_scores.append(scores)
-            
-            all_scores = np.array(all_scores)
-            mean_scores = np.mean(all_scores, axis=0)
-            
-            # Set up the figure with a dark, modern aesthetic
-            plt.style.use('dark_background')
-            fig, ax = plt.subplots(figsize=(12, 6), facecolor='#0d1117')
-            ax.set_facecolor('#0d1117')
-            
-            # Plot mean score line with gradient fill
-            ax.fill_between(timestamps, 0, mean_scores, 
-                           color='#58a6ff', alpha=0.15)
-            ax.plot(timestamps, mean_scores, 
-                   color='#58a6ff', 
-                   linewidth=2.5)
-            
-            # Add markers at key points
-            ax.scatter([timestamps[-1]], [mean_scores[-1]], 
-                      color='#58a6ff', s=80, zorder=10, edgecolors='white', linewidths=1.5)
-            
-            # Final score annotation
-            final_mean = mean_scores[-1] if len(mean_scores) > 0 else 0
-            ax.annotate(f'{final_mean:.3f}', 
-                       xy=(timestamps[-1], final_mean),
-                       xytext=(15, 0), textcoords='offset points',
-                       fontsize=14, fontweight='bold', color='#58a6ff',
-                       va='center')
-            
-            # Styling
-            ax.set_xlabel('Time (seconds)', fontsize=13, color='#c9d1d9', labelpad=10)
-            ax.set_ylabel('Average Similarity Score', fontsize=13, color='#c9d1d9', labelpad=10)
-            
-            # Title
-            learning_type = "Social Learning" if self.social_learning_enabled else "Self Learning"
-            title = f'{learning_type} — Average Score Over Time'
-            subtitle = f'{num_agents} agents • {self.ground_truth_key or "scenario"}'
-            
-            ax.set_title(title, fontsize=16, color='#ffffff', fontweight='bold', pad=15)
-            ax.text(0.5, 1.02, subtitle, transform=ax.transAxes, 
-                   fontsize=10, color='#8b949e', ha='center', va='bottom')
-            
-            # Grid
-            ax.grid(True, alpha=0.15, color='#30363d', linestyle='-', linewidth=0.5)
-            ax.set_axisbelow(True)
-            
-            # Axis limits
-            ax.set_xlim(timestamps[0], timestamps[-1] + 10)
-            ax.set_ylim(0, 1.0)
-            
-            # Spine styling
-            for spine in ax.spines.values():
-                spine.set_visible(False)
-            
-            # Tick styling
-            ax.tick_params(colors='#8b949e', labelsize=10)
-            
-            plt.tight_layout()
-            
-            # Save
-            plot_path = run_dir / "scores_over_time.png"
-            plt.savefig(plot_path, dpi=150, facecolor='#0d1117', edgecolor='none', bbox_inches='tight')
-            plt.close(fig)
-            
-            print(f"📊 Saved score plot to {plot_path}")
-            
-        except Exception as e:
-            print(f"⚠️ Failed to generate score plot: {e}")
-                
-                

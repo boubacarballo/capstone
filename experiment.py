@@ -5,7 +5,6 @@ from vi import Config, Window
 from subjects import SubjectAgent
 from environment import Environment
 from story_registry import create_story_environment
-from visualize import LivePlot
 import random
 import math
 from runtime_config import get_runtime_settings
@@ -18,9 +17,6 @@ def run_simulation():
     social_learning_enabled = settings["social_learning_enabled"]
     num_knowledge_agents = settings["agents"]["knowledge"]
     num_subject_agents = settings["agents"]["subjects"]
-    live_plot_settings = (settings.get("visualization") or {}).get("live_plot") or {}
-    live_plot_enabled = live_plot_settings.get("enabled", True)
-    live_plot_interval_ms = live_plot_settings.get("update_interval_ms", 3000)
     ground_truth_snippets = list(settings["ground_truth"].get("snippets", []))
 
     if not ground_truth_snippets:
@@ -29,56 +25,22 @@ def run_simulation():
     # Information teleportation settings
     teleport_settings = settings.get("information_teleportation", {})
     teleport_enabled = teleport_settings.get("enabled", False)
-    teleport_mode = teleport_settings.get("mode", "shuffle")
-    initial_active_count = teleport_settings.get("initial_active_count", 5)
-    
-    # For dynamic_pool mode: shuffle and split snippets
-    is_dynamic_pool = teleport_enabled and teleport_mode == "dynamic_pool"
-    is_constant_ratio_pool = teleport_enabled and teleport_mode == "constant_ratio_pool"
-    is_exponential_swap_pool = teleport_enabled and teleport_mode == "exponential_swap_pool"
-    is_exponential_one_time_pool = teleport_enabled and teleport_mode == "exponential_one_time_pool"
-    snippet_pool = []
-    
-    if is_dynamic_pool:
-        # Shuffle all snippets
-        random.shuffle(ground_truth_snippets)
-        # Split into initial active and pool
-        initial_active_count = min(initial_active_count, len(ground_truth_snippets))
-        initial_snippets = ground_truth_snippets[:initial_active_count]
-        snippet_pool = ground_truth_snippets[initial_active_count:]
-        ground_truth_snippets = initial_snippets
-        num_subject_agents = initial_active_count
-        print(f"🏊 Dynamic pool mode: {initial_active_count} initial subjects, {len(snippet_pool)} in pool")
-    elif is_constant_ratio_pool:
-        # Spawn ALL snippets; environment will control which fraction is visible
-        num_fragments = len(ground_truth_snippets)
-        num_subject_agents = num_fragments
-        active_ratio = teleport_settings.get("active_ratio", 0.2)
-        target_active = max(1, round(active_ratio * num_subject_agents))
-        print(f"🎯 Constant ratio pool mode: {num_subject_agents} total subjects, "
-              f"{target_active} active at {active_ratio:.0%} ratio")
-    elif is_exponential_swap_pool:
-        # Spawn ALL snippets; environment will control visibility via a single Poisson timer
-        num_fragments = len(ground_truth_snippets)
-        num_subject_agents = num_fragments
+    teleport_mode = teleport_settings.get("mode")
+    is_dynamic_pool_with_reemission = teleport_enabled and teleport_mode == "dynamic_pool_with_reemission"
+    is_dynamic_pool_without_reemission = teleport_enabled and teleport_mode == "dynamic_pool_without_reemission"
+
+    if teleport_enabled:
+        # Spawn ALL snippets; environment controls visibility via Poisson timer
+        num_subject_agents = len(ground_truth_snippets)
         active_ratio = teleport_settings.get("active_ratio", 0.2)
         mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
         target_active = max(1, round(active_ratio * num_subject_agents))
-        print(f"Exponential swap pool mode: {num_subject_agents} total subjects, "
+        reemission_label = "with reemission" if is_dynamic_pool_with_reemission else "without reemission"
+        print(f"Dynamic pool ({reemission_label}): {num_subject_agents} total subjects, "
               f"{target_active} initially active at {active_ratio:.0%} ratio, "
               f"mean swap interval {mean_swap_time}s")
-    elif is_exponential_one_time_pool:
-        # Spawn ALL snippets; each subject appears at most once (no re-appearances after swap-out)
-        num_fragments = len(ground_truth_snippets)
-        num_subject_agents = num_fragments
-        active_ratio = teleport_settings.get("active_ratio", 0.2)
-        mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
-        target_active = max(1, round(active_ratio * num_subject_agents))
-        print(f"Exponential one-time pool mode: {num_subject_agents} total subjects, "
-              f"{target_active} initially active at {active_ratio:.0%} ratio, "
-              f"mean swap interval {mean_swap_time}s (no re-appearances)")
     else:
-        # Standard mode: align subject agent count with available snippets
+        # Baseline: align subject agent count with available snippets
         num_fragments = len(ground_truth_snippets)
         if num_subject_agents <= 0 or num_subject_agents > num_fragments:
             num_subject_agents = num_fragments
@@ -133,44 +95,26 @@ def run_simulation():
             subject.info = fragment
             subject.pos.update(position)
 
-    # Initialize dynamic pool if in dynamic_pool mode
-    if is_dynamic_pool and snippet_pool:
-        simulation.initialize_dynamic_pool(snippet_pool)
-    
-    # Initialize constant ratio pool if in constant_ratio_pool mode
-    if is_constant_ratio_pool:
-        simulation.initialize_constant_ratio_pool()
+    if is_dynamic_pool_with_reemission:
+        simulation.initialize_dynamic_pool_with_reemission()
 
-    # Initialize exponential swap pool if in exponential_swap_pool mode
-    if is_exponential_swap_pool:
-        simulation.initialize_exponential_swap_pool()
-
-    # Initialize exponential one-time pool (subjects appear at most once)
-    if is_exponential_one_time_pool:
-        simulation.initialize_exponential_one_time_pool()
+    if is_dynamic_pool_without_reemission:
+        simulation.initialize_dynamic_pool_without_reemission()
     
     return simulation
 
 # Create and run the story environment
 if __name__ == "__main__":
     simulation = None
-    plot: LivePlot | None = None
-    try: 
-        runtime_settings = get_runtime_settings()
-        live_plot_cfg = (runtime_settings.get("visualization") or {}).get("live_plot") or {}
-        if live_plot_cfg.get("enabled", True):
-            plot = LivePlot()
-        else:
-            print("ℹ️ Live plotting is disabled via configs.yaml; running headless.")
+    try:
         simulation = run_simulation()
-        simulation.run(plot)
+        simulation.run()
     except KeyboardInterrupt:
         print("\n⏹️  Simulation interrupted by user")
     finally:
         if simulation:
             simulation.stop()
-            # Persist results if the simulation ended unexpectedly
             if not getattr(simulation, "_experiment_saved", False):
-                simulation.save_experiment_data(plot)
+                simulation.save_experiment_data()
         
         
