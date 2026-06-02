@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from vi import Agent, Config, Simulation, Window, HeadlessSimulation
 import json
-from llm import LLM
+from llm import LLM, shutdown_executor
 import pygame as pg
 from pathlib import Path
 from runtime_config import get_runtime_settings
@@ -138,7 +138,7 @@ class Environment(Simulation):
         self.next_snapshot_time = self.snapshot_interval_seconds
         
         total_duration = self.num_snapshots * self.snapshot_interval_seconds
-        logger.info("Starting experiment: %d snapshots x %.1fs = %.1fs total", self.num_snapshots, self.snapshot_interval_seconds, total_duration)
+        logger.debug("Starting experiment: %d snapshots x %.1fs = %.1fs total", self.num_snapshots, self.snapshot_interval_seconds, total_duration)
         
         while self._running:
             self.tick()
@@ -159,10 +159,11 @@ class Environment(Simulation):
             
             # Stop when we have all snapshots
             if self.snapshots_recorded >= self.num_snapshots:
-                logger.info("All %d snapshots recorded. Ending experiment.", self.num_snapshots)
+                logger.debug("All %d snapshots recorded. Ending experiment.", self.num_snapshots)
                 self.stop()
                 break
 
+        shutdown_executor()
         self.save_experiment_data()
 
         return self._metrics
@@ -177,7 +178,7 @@ class Environment(Simulation):
                 agent.summary_history.append(cleaned_summary if cleaned_summary else "")
 
         self.snapshots_recorded += 1
-        logger.info("Snapshot %d/%d recorded", self.snapshots_recorded, self.num_snapshots)
+        logger.debug("Snapshot %d/%d recorded", self.snapshots_recorded, self.num_snapshots)
 
     def _elapsed_sim_seconds(self) -> float:
         fps = getattr(self.config, "fps", None) if hasattr(self, "config") else None

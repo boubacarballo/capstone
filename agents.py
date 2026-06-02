@@ -20,7 +20,7 @@ class knowledgeAgent(Agent):
     
         self.sensor = Sensor(self)
         self.actuator = Actuator(self) 
-        self.llm = LLM(self) 
+        self.llm = LLM()
         self.role = "KNOWLEDGE_AGENT"
         self.pos.x = random.uniform(0, _ENV_WIDTH)
         self.pos.y = random.uniform(0, _ENV_HEIGHT)
@@ -80,9 +80,12 @@ class knowledgeAgent(Agent):
         if self.pending_future is not None:
             task_type, future = self.pending_future
             if future.done():
-                result = future.result()
-                logger.debug("Agent %s received %s summary: %s", self.id, task_type, result)
-                self.t_summary.append(result)
+                try:
+                    result = future.result()
+                    logger.info("Agent %s updated summary (%s): %s", self.id, task_type, result)
+                    self.t_summary.append(result)
+                except Exception as exc:
+                    logger.error("Agent %s %s task failed: %s", self.id, task_type, exc)
                 self.pending_future = None
         
         

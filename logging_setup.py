@@ -21,3 +21,6 @@ def setup_logging(log_path: Path) -> None:
 
     root.addHandler(console)
     root.addHandler(file_handler)
+
+    # httpx logs every HTTP request at INFO — suppress below WARNING
+    logging.getLogger("httpx").setLevel(logging.WARNING)

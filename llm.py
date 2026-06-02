@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, Future
 from openai import OpenAI
 import ollama
-from prompts import system_prompt, system_prompt_v2, system_prompt_v3, INTERACTION_PROMPT, PRIVATE_INFO_PROMPT
+from prompts import system_prompt, INTERACTION_PROMPT, PRIVATE_INFO_PROMPT
 
 load_dotenv()
 
@@ -20,10 +20,16 @@ class LLMRequestError(RuntimeError):
 _LLM_EXECUTOR: ThreadPoolExecutor | None = None
 
 
-class LLM:
-    def __init__(self, agent=None):
-        self.agent = agent
+def shutdown_executor() -> None:
+    """Wait for all in-flight LLM requests to finish, then tear down the thread pool."""
+    global _LLM_EXECUTOR
+    if _LLM_EXECUTOR is not None:
+        _LLM_EXECUTOR.shutdown(wait=True, cancel_futures=False)
+        _LLM_EXECUTOR = None
 
+
+class LLM:
+    def __init__(self):
         # Provider selection: "openai" | "ollama"
         self.provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 
@@ -90,6 +96,7 @@ class LLM:
             return reply
         except Exception as exc:
             self.messages.pop()
+            logger.error("OpenAI request failed: %s", exc)
             raise LLMRequestError(f"LLM chat request failed: {exc}") from exc
 
     def _ollama_chat(self, prompt: str) -> str:
@@ -114,6 +121,7 @@ class LLM:
             return reply
         except Exception as exc:
             self.messages.pop()
+            logger.error("Ollama request failed: %s", exc)
             raise LLMRequestError(f"Ollama chat request failed: {exc}") from exc
 
     def submit_interaction(self, summary: str, received_info: str) -> Future | None:
