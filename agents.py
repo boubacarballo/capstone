@@ -22,7 +22,7 @@ class knowledgeAgent(Agent):
         self.pos.x = random.uniform(0, _ENV_WIDTH)
         self.pos.y = random.uniform(0, _ENV_HEIGHT)
         self.surrounding_state = "ALONE"
-        self.object_state = "NONE"
+        self.subject_state = "AWAY"
         self.p = deque(maxlen=context_size)
         self.t_summary = deque(maxlen=1)
         self.t_received = deque(maxlen=context_size)
@@ -60,18 +60,18 @@ class knowledgeAgent(Agent):
                         self.surrounding_state = "ALONE"
 
         #finite state machine for object state
-        match self.object_state:
-            case "NONE":
+        match self.subject_state:
+            case "AWAY":
                 if number_of_subjects > 0:
                     print("Encountered a site")
                     if not self.is_llm_busy():
                         self.sensor.collect_information_from_subjects(subjects)
                         self.summarize_private_information()
-                    self.object_state = "ON_SITE"
+                    self.subject_state = "NEAR_SUBJECT"
                     
-            case "ON_SITE":
+            case "NEAR_SUBJECT":
                 if number_of_subjects == 0:
-                    self.object_state = "NONE"
+                    self.subject_state = "AWAY"
 
         # NOTE: Only update t_summary here. summary_history is managed by record_snapshot()
         if self.pending_future is not None:
