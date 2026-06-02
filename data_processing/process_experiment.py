@@ -213,9 +213,10 @@ def plot_runs(
     figsize: tuple[float, float] | None = None,
     dpi: int = 150,
     # --- fonts ---
-    title_fontsize: int = 13,
-    label_fontsize: int = 11,
-    legend_fontsize: int = 8,
+    title_fontsize: int = 28,
+    label_fontsize: int = 36,
+    tick_fontsize: int = 32,
+    legend_fontsize: int = 32,
     # --- legend ---
     legend_loc: str = "lower right",
     show_legend: bool = True,
@@ -279,7 +280,7 @@ def plot_runs(
     matplotlib Figure
     """
     n_runs = len(run_results)
-    default_figsize = (max(11, 10 * n_runs), 5)
+    default_figsize = (max(14, 10 * n_runs), 8)
     fig, axes = plt.subplots(
         1, n_runs,
         figsize=figsize or default_figsize,
@@ -322,6 +323,7 @@ def plot_runs(
         ax.set_xlim(*xlim) if xlim is not None else ax.set_xlim(ts[0], x_max)
         ax.set_ylim(*ylim)
         ax.set_xlabel(xlabel, fontsize=label_fontsize)
+        ax.tick_params(axis="both", labelsize=tick_fontsize)
         if grid:
             ax.grid(True, alpha=0.25, linestyle="--")
 
@@ -330,7 +332,7 @@ def plot_runs(
             if legend_labels is not None and col < len(legend_labels)
             else run_label
         )
-        ax.set_title(subplot_title, fontsize=label_fontsize, pad=6)
+        ax.set_title(subplot_title, fontsize=label_fontsize, pad=20)
 
         if show_legend:
             handles, labels = ax.get_legend_handles_labels()
@@ -339,7 +341,7 @@ def plot_runs(
 
     axes[0, 0].set_ylabel(ylabel, fontsize=label_fontsize)
 
-    fig.suptitle(title, fontsize=title_fontsize, y=1.02)
+    fig.suptitle(title, fontsize=title_fontsize, pad=20)
     plt.tight_layout()
 
     if output_path is not None:
@@ -365,12 +367,13 @@ def plot_runs_overlay(
     xlim: tuple[float, float] | None = None,
     ylim: tuple[float, float] = (-0.02, 1.08),
     # --- figure ---
-    figsize: tuple[float, float] = (11, 5),
+    figsize: tuple[float, float] = (14, 8),
     dpi: int = 150,
     # --- fonts ---
-    title_fontsize: int = 13,
-    label_fontsize: int = 11,
-    legend_fontsize: int = 9,
+    title_fontsize: int = 28,
+    label_fontsize: int = 36,
+    tick_fontsize: int = 32,
+    legend_fontsize: int = 32,
     # --- legend ---
     legend_loc: str = "lower right",
     show_legend: bool = True,
@@ -484,12 +487,13 @@ def plot_runs_overlay(
     ax.set_ylim(*ylim)
     ax.set_xlabel(xlabel, fontsize=label_fontsize)
     ax.set_ylabel(ylabel, fontsize=label_fontsize)
+    ax.tick_params(axis="both", labelsize=tick_fontsize)
     if grid:
         ax.grid(True, alpha=0.25, linestyle="--")
     if show_legend:
         ax.legend(fontsize=legend_fontsize, loc=legend_loc, framealpha=0.8)
 
-    fig.suptitle(title, fontsize=title_fontsize, y=1.02)
+    ax.set_title(title, fontsize=title_fontsize, pad=20)
     plt.tight_layout()
 
     if output_path is not None:
@@ -525,8 +529,9 @@ def main(
     figsize: tuple[float, float] | None = None,
     dpi: int = 150,
     # --- fonts ---
-    title_fontsize: int = 13,
-    label_fontsize: int = 11,
+    title_fontsize: int = 28,
+    label_fontsize: int = 36,
+    tick_fontsize: int = 32,
     legend_fontsize: int | None = None,
     # --- legend ---
     legend_loc: str = "lower right",
@@ -617,6 +622,7 @@ def main(
         dpi=dpi,
         title_fontsize=title_fontsize,
         label_fontsize=label_fontsize,
+        tick_fontsize=tick_fontsize,
         legend_loc=legend_loc,
         show_legend=show_legend,
         legend_labels=legend_labels,
@@ -736,14 +742,21 @@ if __name__ == "__main__":
         type=int,
         default=13,
         metavar="PT",
-        help="Font size for the figure title. Default: 13.",
+        help="Font size for the figure title. Default: 28.",
     )
     parser.add_argument(
         "--label-fontsize",
         type=int,
-        default=11,
+        default=36,
         metavar="PT",
-        help="Font size for axis labels. Default: 11.",
+        help="Font size for axis labels. Default: 36.",
+    )
+    parser.add_argument(
+        "--tick-fontsize",
+        type=int,
+        default=32,
+        metavar="PT",
+        help="Font size for axis tick labels. Default: 32.",
     )
     parser.add_argument(
         "--legend-fontsize",
@@ -801,6 +814,7 @@ if __name__ == "__main__":
         dpi=args.dpi,
         title_fontsize=args.title_fontsize,
         label_fontsize=args.label_fontsize,
+        tick_fontsize=args.tick_fontsize,
         legend_fontsize=args.legend_fontsize,
         legend_loc=args.legend_loc,
         show_legend=not args.no_legend,

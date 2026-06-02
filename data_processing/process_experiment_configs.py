@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
+
+# Make the repo root importable regardless of cwd
+_root = Path(__file__).resolve().parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
 
 from data_processing.process_experiment import _load_nli_model, process_run
 
@@ -27,14 +33,12 @@ def discover_runs(config_folder: Path) -> list[Path]:
         for p in config_folder.iterdir()
         if p.is_dir()
         and p.name.startswith("run_")
-        and (p / "experiment.json").exists()
-        and (p / "metadata.json").exists()
+        and (p / "run.json").exists()
     )
     if not runs:
         raise FileNotFoundError(
             f"No valid run directories found in '{config_folder}'. "
-            "Expected subdirectories named 'run_*' containing "
-            "'experiment.json' and 'metadata.json'."
+            "Expected subdirectories named 'run_*' containing 'run.json'."
         )
     return runs
 
