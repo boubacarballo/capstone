@@ -1,3 +1,4 @@
+import logging
 from llm import LLM
 from vi import Agent
 from sensors import Sensor, Actuator
@@ -6,6 +7,8 @@ import random
 import pygame as pg
 from collections import deque
 from runtime_config import get_runtime_settings
+
+logger = logging.getLogger(__name__)
 
 _SETTINGS = get_runtime_settings()
 _ENV_WIDTH = _SETTINGS["environment"]["width"]
@@ -54,7 +57,7 @@ class knowledgeAgent(Agent):
                             self.sensor.exchange_context_with_agents(agents)
                             self.summarize_interaction()
                         self.surrounding_state = "NOT_ALONE"
-                        print(f"Agent {self.id} is now in the state NOT_ALONE")
+                        logger.debug("Agent %s is now in state NOT_ALONE", self.id)
                 case "NOT_ALONE":
                     if number_of_neighbors == 0:
                         self.surrounding_state = "ALONE"
@@ -63,7 +66,7 @@ class knowledgeAgent(Agent):
         match self.subject_state:
             case "AWAY":
                 if number_of_subjects > 0:
-                    print("Encountered a site")
+                    logger.debug("Agent %s encountered a site", self.id)
                     if not self.is_llm_busy():
                         self.sensor.collect_information_from_subjects(subjects)
                         self.summarize_private_information()
@@ -78,7 +81,7 @@ class knowledgeAgent(Agent):
             task_type, future = self.pending_future
             if future.done():
                 result = future.result()
-                print(f"Agent {self.id} received {task_type} summary: {result}")
+                logger.debug("Agent %s received %s summary: %s", self.id, task_type, result)
                 self.t_summary.append(result)
                 self.pending_future = None
         
@@ -95,11 +98,9 @@ class knowledgeAgent(Agent):
         own_summary = " ".join(self.t_summary) if self.t_summary else ""
         received_summaries = " ".join(self.t_received)
         
-        print(f"Agent {self.id} merging summaries for interaction...")
         future = self.llm.submit_interaction(summary=own_summary, received_info=received_summaries)
         if future is not None:
             self.pending_future = ("interaction", future)
-        print(f"Agent {self.id} scheduled interaction summarization at {pg.time.get_ticks()}ms")
     
     def summarize_private_information(self):
         """
@@ -111,11 +112,9 @@ class knowledgeAgent(Agent):
         own_summary = " ".join(self.t_summary) if self.t_summary else ""
         private_info = " ".join(self.p) if self.p else ""
         
-        print(f"Agent {self.id} summarizing private information...")
         future = self.llm.submit_private_info(summary=own_summary, private_info=private_info)
         if future is not None:
             self.pending_future = ("private info", future)
-        print(f"Agent {self.id} scheduled private information summarization at {pg.time.get_ticks()}ms")
     def get_velocities(self):
         # Constant forward motion; wall bounce (reflect direction) is handled in Environment._bounce_agent_off_walls
         linear_speed = 2
@@ -123,4 +122,3 @@ class knowledgeAgent(Agent):
         return linear_speed, angular_velocity
 
 
-    # removed DB logging

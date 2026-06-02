@@ -1,4 +1,4 @@
-active_experiment: dynamic_pool_with_reemission
+active_experiment: baseline
 learning_mode: social   # self | social
 
 context:
@@ -12,8 +12,8 @@ defaults:
   environment:
     width: 750
     height: 750
-  num_snapshots: 400
-  snapshot_interval_seconds: 3.0
+  num_snapshots: 25
+  snapshot_interval_seconds: 2.0
 
 experiments:
   baseline:

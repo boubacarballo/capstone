@@ -1,3 +1,4 @@
+import logging
 import os
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, Future
@@ -6,6 +7,8 @@ import ollama
 from prompts import system_prompt, system_prompt_v2, system_prompt_v3, INTERACTION_PROMPT, PRIVATE_INFO_PROMPT
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class LLMRequestError(RuntimeError):
@@ -57,7 +60,7 @@ class LLM:
         # prompt_tokens reflects the full context sent (all prior turns + new message).
         self.context_growth: list[dict] = []
 
-        print(f"🤖 LLM initialized: provider={self.provider}, model={self.model}")
+        logger.debug("LLM initialized: provider=%s, model=%s", self.provider, self.model)
 
     def chat(self, prompt: str) -> str:
         """Make a chat completion request."""

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from agents import knowledgeAgent
 from vi import Config, Window
 from subjects import SubjectAgent
 from environment import Environment
+from logging_setup import setup_logging
 import random
 import math
 from runtime_config import get_runtime_settings
+
+logger = logging.getLogger(__name__)
 
 def run_simulation():
     settings = get_runtime_settings()
@@ -43,15 +47,15 @@ def run_simulation():
         snippet_pool = ground_truth_snippets[initial_active_count:]
         ground_truth_snippets = initial_snippets
         num_subject_agents = initial_active_count
-        print(f"🏊 Dynamic pool mode: {initial_active_count} initial subjects, {len(snippet_pool)} in pool")
+        logger.info("Dynamic pool mode: %d initial subjects, %d in pool", initial_active_count, len(snippet_pool))
     elif is_constant_ratio_pool:
         # Spawn ALL snippets; environment will control which fraction is visible
         num_fragments = len(ground_truth_snippets)
         num_subject_agents = num_fragments
         active_ratio = teleport_settings.get("active_ratio", 0.2)
         target_active = max(1, round(active_ratio * num_subject_agents))
-        print(f"🎯 Constant ratio pool mode: {num_subject_agents} total subjects, "
-              f"{target_active} active at {active_ratio:.0%} ratio")
+        logger.info("Constant ratio pool mode: %d total subjects, %d active at %.0f%% ratio",
+                    num_subject_agents, target_active, active_ratio * 100)
     elif is_exponential_swap_pool:
         # Spawn ALL snippets; environment will control visibility via a single Poisson timer
         num_fragments = len(ground_truth_snippets)
@@ -59,9 +63,8 @@ def run_simulation():
         active_ratio = teleport_settings.get("active_ratio", 0.2)
         mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
         target_active = max(1, round(active_ratio * num_subject_agents))
-        print(f"Dynamic pool (with reemission) mode: {num_subject_agents} total subjects, "
-              f"{target_active} initially active at {active_ratio:.0%} ratio, "
-              f"mean swap interval {mean_swap_time}s")
+        logger.info("Dynamic pool (with reemission) mode: %d total subjects, %d initially active at %.0f%% ratio, mean swap interval %.1fs",
+                    num_subject_agents, target_active, active_ratio * 100, mean_swap_time)
     elif is_exponential_one_time_pool:
         # Spawn ALL snippets; each subject appears at most once (no re-appearances after swap-out)
         num_fragments = len(ground_truth_snippets)
@@ -69,9 +72,8 @@ def run_simulation():
         active_ratio = teleport_settings.get("active_ratio", 0.2)
         mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
         target_active = max(1, round(active_ratio * num_subject_agents))
-        print(f"Dynamic pool (without reemission) mode: {num_subject_agents} total subjects, "
-              f"{target_active} initially active at {active_ratio:.0%} ratio, "
-              f"mean swap interval {mean_swap_time}s (no re-appearances)")
+        logger.info("Dynamic pool (without reemission) mode: %d total subjects, %d initially active at %.0f%% ratio, mean swap interval %.1fs (no re-appearances)",
+                    num_subject_agents, target_active, active_ratio * 100, mean_swap_time)
     else:
         # Standard mode: align subject agent count with available snippets
         num_fragments = len(ground_truth_snippets)
@@ -89,13 +91,10 @@ def run_simulation():
     num_snapshots = settings.get("num_snapshots", 30)
     snapshot_interval = settings.get("snapshot_interval_seconds", 10.0)
     
-    print(f"Running the simulation with the following settings")
-    print(f"Environment: {env_width}x{env_height}")
-    print(f"Agents: {num_knowledge_agents} knowledge, {num_subject_agents} subjects")
-    print(f"Context length: {context_length}")
-    print(f"Social learning enabled: {social_learning_enabled}")
-    print(f"Snapshots: {num_snapshots} × {snapshot_interval}s = {num_snapshots * snapshot_interval}s total")
-    print(f"Ground truth snippets: {len(ground_truth_snippets)}")
+    logger.info("Simulation settings — environment: %dx%d, agents: %d knowledge / %d subjects, context: %d, social: %s, snapshots: %d x %.1fs, ground truth snippets: %d",
+                env_width, env_height, num_knowledge_agents, num_subject_agents,
+                context_length, social_learning_enabled,
+                num_snapshots, snapshot_interval, len(ground_truth_snippets))
 
     def create_knowledge_agents(*args, **kwargs):
         return knowledgeAgent(context_size=context_length, social_learning_enabled=social_learning_enabled, *args, **kwargs)
@@ -145,9 +144,10 @@ if __name__ == "__main__":
     simulation = None
     try:
         simulation = run_simulation()
+        setup_logging(simulation.run_dir / "run.log")
         simulation.run()
     except KeyboardInterrupt:
-        print("\n⏹️  Simulation interrupted by user")
+        logging.getLogger(__name__).info("Simulation interrupted by user")
     finally:
         if simulation:
             simulation.stop()

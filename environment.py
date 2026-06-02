@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from vi import Agent, Config, Simulation, Window, HeadlessSimulation
 import json
 from llm import LLM
@@ -8,6 +9,8 @@ from pathlib import Path
 from runtime_config import get_runtime_settings
 from datetime import datetime
 import random
+
+logger = logging.getLogger(__name__)
 
 
 class Environment(Simulation):
@@ -43,6 +46,35 @@ class Environment(Simulation):
         self.start_time = pg.time.get_ticks()
         self.tick_count = 0
         self._experiment_saved = False
+        self.run_dir = self._make_run_dir()
+
+    def _make_run_dir(self) -> Path:
+        base_dir = Path("experiments")
+        active_experiment = self.runtime_settings.get("active_experiment", "unspecified")
+        learning_mode = self.runtime_settings.get("learning_mode", "self")
+
+        teleport = self.runtime_settings.get("information_teleportation", {})
+        if teleport.get("enabled"):
+            active_ratio = teleport.get("active_ratio", 0.2)
+            mean_swap_time = teleport.get("mean_swap_time", 10.0)
+            run_dirname = f"{active_experiment}__{learning_mode}__ratio{active_ratio}__swap{int(mean_swap_time)}s"
+        else:
+            run_dirname = f"{active_experiment}__{learning_mode}"
+
+        profile_dir = base_dir / run_dirname
+        profile_dir.mkdir(parents=True, exist_ok=True)
+
+        existing_runs = [p for p in profile_dir.iterdir() if p.is_dir() and p.name.startswith("run_")]
+        next_idx = 1
+        if existing_runs:
+            try:
+                next_idx = max(int(p.name.split("_")[-1]) for p in existing_runs) + 1
+            except ValueError:
+                next_idx = 1
+
+        run_dir = profile_dir / f"run_{next_idx:04d}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir
 
     def _HeadlessSimulation__update_positions(self):
         env_w = self.runtime_settings["environment"]["width"]
@@ -106,7 +138,7 @@ class Environment(Simulation):
         self.next_snapshot_time = self.snapshot_interval_seconds
         
         total_duration = self.num_snapshots * self.snapshot_interval_seconds
-        print(f"🚀 Starting experiment: {self.num_snapshots} snapshots × {self.snapshot_interval_seconds}s = {total_duration}s total")
+        logger.info("Starting experiment: %d snapshots x %.1fs = %.1fs total", self.num_snapshots, self.snapshot_interval_seconds, total_duration)
         
         while self._running:
             self.tick()
@@ -127,7 +159,7 @@ class Environment(Simulation):
             
             # Stop when we have all snapshots
             if self.snapshots_recorded >= self.num_snapshots:
-                print(f"✅ All {self.num_snapshots} snapshots recorded. Ending experiment.")
+                logger.info("All %d snapshots recorded. Ending experiment.", self.num_snapshots)
                 self.stop()
                 break
 
@@ -145,7 +177,7 @@ class Environment(Simulation):
                 agent.summary_history.append(cleaned_summary if cleaned_summary else "")
 
         self.snapshots_recorded += 1
-        print(f"📸 Snapshot {self.snapshots_recorded}/{self.num_snapshots} recorded")
+        logger.info("Snapshot %d/%d recorded", self.snapshots_recorded, self.num_snapshots)
 
     def _elapsed_sim_seconds(self) -> float:
         fps = getattr(self.config, "fps", None) if hasattr(self, "config") else None
@@ -189,8 +221,8 @@ class Environment(Simulation):
         current_time = self._elapsed_sim_seconds()
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
-        print(f"Dynamic pool (with reemission) initialized: {target_active}/{total} subjects active "
-              f"({self.active_ratio:.0%} ratio), first swap at t={self.next_swap_time:.2f}s")
+        logger.info("Dynamic pool (with reemission) initialized: %d/%d subjects active (%.0f%% ratio), first swap at t=%.2fs",
+                    target_active, total, self.active_ratio * 100, self.next_swap_time)
 
     def dynamic_pool_with_reemission_update(self):
         """
@@ -220,7 +252,7 @@ class Environment(Simulation):
             incoming.set_visible(True)
 
             new_active_count = len(active)  # net change is zero: −1 +1
-            print(f"Dynamic pool swap (reemission): 1 out, 1 in. Active: {new_active_count}/{len(subjects)}")
+            logger.debug("Dynamic pool swap (reemission): 1 out, 1 in. Active: %d/%d", new_active_count, len(subjects))
 
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
@@ -255,9 +287,8 @@ class Environment(Simulation):
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
         never_appeared_count = len(inactive_subjects)
-        print(f"Dynamic pool (without reemission) initialized: {target_active}/{total} subjects active "
-              f"({self.active_ratio:.0%} ratio), {never_appeared_count} never-appeared in reserve, "
-              f"first swap at t={self.next_swap_time:.2f}s")
+        logger.info("Dynamic pool (without reemission) initialized: %d/%d subjects active (%.0f%% ratio), %d never-appeared in reserve, first swap at t=%.2fs",
+                    target_active, total, self.active_ratio * 100, never_appeared_count, self.next_swap_time)
 
     def dynamic_pool_without_reemission_update(self):
         """
@@ -290,17 +321,17 @@ class Environment(Simulation):
                 incoming.pos.update((random.uniform(50, env_width - 50), random.uniform(50, env_height - 50)))
                 incoming.set_visible(True)
                 self._appeared_subjects.add(id(incoming))
-                print(f"One-time swap: 1 retired, 1 new in. Active: {len(active)}/{len(subjects)}, "
-                      f"Never-appeared remaining: {len(never_appeared) - 1}")
+                logger.debug("One-time swap: 1 retired, 1 new in. Active: %d/%d, never-appeared remaining: %d",
+                             len(active), len(subjects), len(never_appeared) - 1)
             else:
-                print(f"One-time swap: 1 retired, pool exhausted. Active: {len(active) - 1}/{len(subjects)}")
+                logger.debug("One-time swap: 1 retired, pool exhausted. Active: %d/%d", len(active) - 1, len(subjects))
 
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
     def save_experiment_data(self):
         """Save experiment data and plot to the experiments directory"""
         if self._experiment_saved:
-            print("ℹ️ Experiment data already saved; skipping duplicate save.")
+            logger.warning("Experiment data already saved; skipping duplicate save.")
             return
         try:
             # Generate logical timestamps: [2, 4, 6, ..., 120] based on snapshot interval
@@ -318,38 +349,16 @@ class Environment(Simulation):
                 if getattr(agent, "role", None) == "KNOWLEDGE_AGENT":
                     agent_key = str(agent.id)
                     summaries = list(getattr(agent, "summary_history", []))
-                    print(f"Agent {agent_key}: {len(summaries)} summaries")
+                    logger.debug("Agent %s: %d summaries", agent_key, len(summaries))
                     data["agents"][agent_key] = {
                         "summaries": {str(t): summaries[i] if i < len(summaries) else "" for i, t in enumerate(timestamps)},
                         "llm_context": agent.llm.get_context_stats(),
                     }
 
-            base_dir = Path("experiments")
+            run_dir = self.run_dir
             active_experiment = self.runtime_settings.get("active_experiment", "unspecified")
             learning_mode = self.runtime_settings.get("learning_mode", "self")
             swarm_type = self.runtime_settings.get("swarm_type") or ("social_learning" if self.social_learning_enabled else "self_learning")
-
-            teleport = self.runtime_settings.get("information_teleportation", {})
-            if teleport.get("enabled"):
-                active_ratio = teleport.get("active_ratio", 0.2)
-                mean_swap_time = teleport.get("mean_swap_time", 10.0)
-                run_dirname = f"{active_experiment}__{learning_mode}__ratio{active_ratio}__swap{int(mean_swap_time)}s"
-            else:
-                run_dirname = f"{active_experiment}__{learning_mode}"
-
-            profile_dir = base_dir / run_dirname
-            profile_dir.mkdir(parents=True, exist_ok=True)
-
-            existing_runs = [p for p in profile_dir.iterdir() if p.is_dir() and p.name.startswith("run_")]
-            next_idx = 1
-            if existing_runs:
-                try:
-                    next_idx = max(int(p.name.split("_")[-1]) for p in existing_runs) + 1
-                except ValueError:
-                    next_idx = 1
-
-            run_dir = profile_dir / f"run_{next_idx:04d}"
-            run_dir.mkdir(parents=True, exist_ok=True)
 
             metadata = {
                 "created_at_utc": datetime.utcnow().isoformat() + "Z",
@@ -378,8 +387,8 @@ class Environment(Simulation):
             with open(run_path, "w", encoding="utf-8") as f:
                 json.dump(output, f, ensure_ascii=False, indent=2)
 
-            print(f"💾 Saved experiment to {run_dir}")
+            logger.info("Saved experiment to %s", run_dir)
             self._experiment_saved = True
         except Exception as e:
-            print(f"⚠️ Failed to save experiment data: {e}")
+            logger.error("Failed to save experiment data: %s", e)
 
