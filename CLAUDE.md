@@ -54,8 +54,4 @@ experiments:
   active_profile: baseline_social
 ```
 
-LLM backend is set in `.env` (copy from `.env.example`). When using Ollama, `ollama serve` must be running before launching the experiment.
-
-## HPC (NYUAD Jubail / SLURM)
-
-Scripts live in `hpc/`. Submit with `sbatch hpc/submit_experiment.slurm` (25-task job array, one A100 per task). Each task starts its own `ollama serve` on a unique port to avoid collisions on shared nodes.
+LLM backend is set in `.env` (copy from `.env.example`). Supported providers: `ollama` (default, local) and `openai` (cloud). When using Ollama, `ollama serve` must be running before launching the experiment.

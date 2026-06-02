@@ -27,7 +27,7 @@ experiment.py          ← entry point; wires everything together
 ├── environment.py     ← Environment (extends Simulation): snapshot loop, scoring,
 │                         information-teleportation modes, output persistence
 ├── sensors.py         ← Sensor (proximity reads) + Actuator (movement)
-├── llm.py             ← async LLM wrapper: Ollama / OpenAI / vLLM
+├── llm.py             ← async LLM wrapper: Ollama / OpenAI
 ├── metrics.py         ← cosine, BM25, BERTScore, NLI scorers + heatmap renderer
 ├── constants.py       ← system prompts + ground-truth library (3 difficulty tiers)
 ├── story_registry.py  ← alternative "Lost Artifact" narrative scenario
@@ -46,7 +46,7 @@ Output from each run lands in `experiments/<profile>/run_NNNN/`.
 |---|---|
 | Python 3.13+ | enforced by `pyproject.toml` |
 | [uv](https://docs.astral.sh/uv/getting-started/installation/) | fast package manager / venv runner |
-| An LLM backend | Ollama (local), vLLM (local server), or OpenAI (cloud) — see below |
+| An LLM backend | Ollama (local, default) or OpenAI (cloud) — see below |
 
 ---
 
@@ -82,12 +82,6 @@ LLM_MODEL=gemma4:e4b
 # OPENAI_API_KEY=sk-...
 # OPENAI_BASE_URL=https://api.openai.com/v1
 # LLM_MODEL=gpt-4o
-
-# ── vLLM (local server, OpenAI-compatible) ───────────────
-# LLM_PROVIDER=vllm
-# VLLM_BASE_URL=http://localhost:8000/v1
-# VLLM_API_KEY=EMPTY
-# LLM_MODEL=google/gemma-3-4b-it
 
 # Parallel LLM threads (tune to your hardware)
 LLM_MAX_WORKERS=200
@@ -239,28 +233,6 @@ The `analysis/` folder contains additional profiling scripts for aggregating sco
 
 ---
 
-## Running on HPC (NYUAD Jubail / SLURM)
-
-The `hpc/` folder contains scripts for running batched experiments on a SLURM cluster with NVIDIA A100 GPUs.
-
-```bash
-# One-time environment setup on the cluster
-bash hpc/setup_env.sh
-
-# Submit a job array (25 parallel runs, each on 1 A100 + 64 CPUs)
-sbatch hpc/submit_experiment.slurm
-```
-
-The SLURM script:
-- Loads the `ollama/0.12.6` and `python/3.13` modules
-- Starts an `ollama serve` instance on a unique port per array task (to avoid collisions when multiple tasks land on the same node)
-- Pulls `gemma4:e4b` to `/scratch/<user>/.ollama/` on first use
-- Runs `python experiment.py` and cleans up Ollama on exit
-
-Logs are written to `hpc/logs/<job_id>_<task_id>.{out,err}`.
-
----
-
 ## Project File Reference
 
 | File | Purpose |
@@ -270,7 +242,7 @@ Logs are written to `hpc/logs/<job_id>_<task_id>.{out,err}`.
 | `subjects.py` | `SubjectAgent` — passive information carrier |
 | `environment.py` | `Environment` — simulation loop, scoring, persistence, teleportation |
 | `sensors.py` | `Sensor` (proximity/border reads) and `Actuator` (movement) |
-| `llm.py` | Async LLM wrapper supporting Ollama, OpenAI, and vLLM |
+| `llm.py` | Async LLM wrapper supporting Ollama and OpenAI |
 | `metrics.py` | Cosine, BM25, BERTScore, NLI scorers; heatmap renderer |
 | `constants.py` | System prompts (v1/v2/v3) and ground-truth library |
 | `story_registry.py` | Alternative "Lost Artifact of Eldoria" narrative |
@@ -280,8 +252,6 @@ Logs are written to `hpc/logs/<job_id>_<task_id>.{out,err}`.
 | `communication.py` | Low-level inter-agent message utilities |
 | `configs/configs.yaml` | All experiment profiles and global settings |
 | `run.sh` | Runs the active profile 10 times sequentially |
-| `hpc/submit_experiment.slurm` | SLURM job array script |
-| `hpc/setup_env.sh` | Cluster environment bootstrap |
 | `process_experiment.py` | Post-processes a single run directory |
 | `plot_*.py` | Various comparison and visualisation scripts |
 | `statistical_*.py` | Statistical significance tests |
@@ -294,7 +264,7 @@ Logs are written to `hpc/logs/<job_id>_<task_id>.{out,err}`.
 
 **New ground-truth scenario** — add an entry to `GROUND_TRUTH_LIBRARY` in `constants.py`. Each entry needs `name`, `snippets` (list of strings), `text`, `summary`, and `facts`.
 
-**New LLM backend** — extend the `LLM` class in `llm.py`. The public interface is `submit_interaction()`, `submit_private_info()`, and `poll()`.
+**New LLM provider** — extend the `LLM` class in `llm.py`. The public interface is `submit_interaction()`, `submit_private_info()`, and `poll()`.
 
 **New metric** — add a branch in `environment.py → record_snapshot()` and implement the scorer in `metrics.py`.
 
@@ -308,7 +278,6 @@ Logs are written to `hpc/logs/<job_id>_<task_id>.{out,err}`.
 - [SentenceTransformers](https://www.sbert.net/) — semantic embeddings (`all-mpnet-base-v2`).
 - [BERTScore](https://github.com/Tiiiger/bert_score) — reference-based text quality evaluation.
 - [Ollama](https://ollama.com/) — local LLM serving.
-- NYUAD HPC (Jubail) — compute resources for large-scale runs.
 
 ---
 

@@ -4,44 +4,9 @@ from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, Future
 from openai import OpenAI
 import ollama
-from constants import system_prompt, system_prompt_v2, system_prompt_v3
+from prompts import system_prompt, system_prompt_v2, system_prompt_v3, INTERACTION_PROMPT, PRIVATE_INFO_PROMPT
 
 load_dotenv()
-
-
-# Prompt template for fusing summary with information received from other agents
-INTERACTION_PROMPT = """Integrate [NEW INFO] into [PRIOR SUMMARY] and return the updated summary only.
-
-Rules:
-- Every detail already in [PRIOR SUMMARY] must be preserved verbatim or made more specific. Never drop or vague-ify existing details.
-- Only add content from [NEW INFO] that is not already covered.
-- If [NEW INFO] adds nothing new, return [PRIOR SUMMARY] exactly as-is.
-- If both are empty, return an empty string and nothing else.
-
-[PRIOR SUMMARY]:
-{summary}
-
-[NEW INFO]:
-{received_info}
-
-"""
-
-# Prompt template for fusing summary with privately discovered information from sites
-PRIVATE_INFO_PROMPT = """Integrate [NEW INFO] into [PRIOR SUMMARY] and return the updated summary only.
-
-Rules:
-- Every detail already in [PRIOR SUMMARY] must be preserved verbatim or made more specific. Never drop or vague-ify existing details.
-- Only add content from [NEW INFO] that is not already covered.
-- If [NEW INFO] adds nothing new, return [PRIOR SUMMARY] exactly as-is.
-- If both are empty, return an empty string and nothing else.
-
-[PRIOR SUMMARY]:
-{summary}
-
-[NEW INFO]:
-{private_info}
-
-"""
 
 
 class LLMRequestError(RuntimeError):
@@ -56,24 +21,21 @@ _LLM_EXECUTOR: ThreadPoolExecutor | None = None
 class LLM:
     def __init__(self, agent=None):
         self.agent = agent
-        
-        # Provider selection: "openai" | "vllm" | "ollama"
-        self.provider = os.getenv("LLM_PROVIDER", "vllm").lower()
-        
+
+        # Provider selection: "openai" | "ollama"
+        self.provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+
         # Default models per provider
         default_models = {
             "openai": "gpt-4o",
-            "vllm":   "google/gemma-3-4b-it",
             "ollama": "gemma4:e4b",
         }
         self.model = os.getenv("LLM_MODEL", default_models.get(self.provider, "gpt-4o"))
-        
-        if self.provider in ("openai", "vllm"):
-            # vLLM is OpenAI-compatible; switch backends by changing base_url/api_key.
+
+        if self.provider == "openai":
             self.client = OpenAI(
-                api_key=os.getenv("OPENAI_API_KEY" if self.provider == "openai" else "VLLM_API_KEY", "EMPTY"),
-                base_url=os.getenv("OPENAI_BASE_URL" if self.provider == "openai" else "VLLM_BASE_URL",
-                                   "https://api.openai.com/v1" if self.provider == "openai" else "http://localhost:8000/v1"),
+                api_key=os.getenv("OPENAI_API_KEY", "EMPTY"),
+                base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             )
 
         # Initialize global executor if needed
@@ -103,10 +65,10 @@ class LLM:
         """Make a chat completion request."""
         if self.provider == "ollama":
             return self._ollama_chat(prompt)
-        return self._openai_compatible_chat(prompt)
+        return self._openai_chat(prompt)
 
-    def _openai_compatible_chat(self, prompt: str) -> str:
-        """chat.completions request — works for both OpenAI and vLLM."""
+    def _openai_chat(self, prompt: str) -> str:
+        """chat.completions request via OpenAI."""
         self.messages.append({"role": "user", "content": prompt})
         try:
             response = self.client.chat.completions.create(
