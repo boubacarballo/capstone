@@ -1,10 +1,12 @@
 #!/bin/bash
 
-for i in {1..10}; do
-    echo "Run $i/10 starting..."
+N=${1:-10}
+
+for i in $(seq 1 "$N"); do
+    echo "Run $i/$N starting..."
     uv run experiment.py
-    echo "Run $i/10 finished."
+    echo "Run $i/$N finished."
     echo "----------------------"
 done
 
-echo "All 10 runs completed!"
+echo "All $N runs completed!"
