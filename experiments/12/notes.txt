@@ -1,1 +1,0 @@
-This one seems to be much much better with self learning, 1 agent and cosine-bm25 with a few facts about the environment for comparison 
