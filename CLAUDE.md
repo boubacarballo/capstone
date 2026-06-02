@@ -39,13 +39,6 @@ The simulation is a 2D multi-agent world (built on [Violet](https://github.com/m
 - The metric is set globally in `configs.yaml` under `metric:`, not per-profile; changing it mid-experiment family will make runs incomparable.
 - Ground-truth scenarios live in `constants.py` (`GROUND_TRUTH_LIBRARY`) and `story_registry.py`. The profile's `ground_truth_key` selects which one is active.
 
-## Code Style
-
-- **No leading underscores on non-private functions.** Only use `_` prefix for genuinely private helpers or Python dunder methods — not as a general naming convention.
-- **No duplication.** Extract repeated logic into a named function or variable rather than copying it.
-- **Descriptive names, no abbreviations.** Names should say what they represent: `num_agents` not `n_ag`, `ground_truth_bundle` not `gt_b`.
-- **One responsibility per function.** If a function handles multiple concerns, split it.
-
 ## Configuration
 
 Active profile is set in `configs/configs.yaml`:
@@ -54,4 +47,5 @@ experiments:
   active_profile: baseline_social
 ```
 
-LLM backend is set in `.env` (copy from `.env.example`). Supported providers: `ollama` (default, local) and `openai` (cloud). When using Ollama, `ollama serve` must be running before launching the experiment.
+LLM backend is set in `.env` (copy from `.env.example`). When using Ollama, `ollama serve` must be running before launching the experiment.
+

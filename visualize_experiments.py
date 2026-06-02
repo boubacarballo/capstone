@@ -8,7 +8,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from metrics import compute_final_score
 from runtime_config import get_ground_truth_bundle
-from constants import GROUND_TRUTH_LIBRARY
+from prompts import GROUND_TRUTH_LIBRARY
 
 @contextmanager
 def suppress_stdout():

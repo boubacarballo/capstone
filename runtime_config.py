@@ -2,7 +2,7 @@ from functools import lru_cache
 from typing import Dict, Any
 
 from helpers import load_config
-from constants import GROUND_TRUTH_LIBRARY
+from prompts import GROUND_TRUTH_LIBRARY
 
 
 @lru_cache(maxsize=1)

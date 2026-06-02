@@ -98,12 +98,12 @@ def get_claims(metadata: dict) -> list[str]:
     import sys
     from pathlib import Path as _Path
 
-    # Make sure constants.py is importable regardless of cwd
+    # Make sure prompts.py is importable regardless of cwd
     _root = _Path(__file__).parent
     if str(_root) not in sys.path:
         sys.path.insert(0, str(_root))
 
-    from constants import GROUND_TRUTH_LIBRARY
+    from prompts import GROUND_TRUTH_LIBRARY
 
     gt_key = metadata.get("ground_truth_key", "")
     for entry in GROUND_TRUTH_LIBRARY.values():
