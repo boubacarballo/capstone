@@ -8,7 +8,15 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from nltk.tokenize import sent_tokenize
+from sentence_transformers import CrossEncoder
 from tqdm import tqdm
+
+# Make prompts.py importable regardless of cwd
+_root = Path(__file__).resolve().parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
+
+from prompts import GROUND_TRUTH_LIBRARY
 
 # ---------------------------------------------------------------------------
 # NLI helpers
@@ -20,8 +28,6 @@ _ENTAILMENT_IDX = 1
 
 
 def _load_nli_model():
-    from sentence_transformers import CrossEncoder
-
     print("Loading NLI model (cross-encoder/nli-deberta-v3-large) …")
     return CrossEncoder("cross-encoder/nli-deberta-v3-large")
 
@@ -73,52 +79,46 @@ def compute_coverage_score(
 
 
 def load_run(run_folder: Path) -> tuple[dict, dict]:
-    """Return (experiment_data, metadata) for a run folder."""
-    exp_path = run_folder / "experiment.json"
-    meta_path = run_folder / "metadata.json"
+    """Return (run_data, metadata) for a run folder.
 
-    if not exp_path.exists():
-        raise FileNotFoundError(f"experiment.json not found in {run_folder}")
-    if not meta_path.exists():
-        raise FileNotFoundError(f"metadata.json not found in {run_folder}")
+    Both are the same object — run.json contains all fields including metadata.
+    """
+    run_path = run_folder / "run.json"
+    if not run_path.exists():
+        raise FileNotFoundError(f"run.json not found in {run_folder}")
 
-    exp_data = json.loads(exp_path.read_text())
-    metadata = json.loads(meta_path.read_text())
-    return exp_data, metadata
+    data = json.loads(run_path.read_text())
+    return data, data
 
 
 def get_claims(metadata: dict) -> list[str]:
     """
     Return the ground-truth snippets that act as claims for coverage scoring.
 
-    Reads ``ground_truth_key`` from *metadata* (e.g. ``"career_fair_low"``),
-    looks up the matching entry in ``GROUND_TRUTH_LIBRARY`` by its ``name``
-    field, and returns that entry's ``snippets`` list.
+    Reads ``ground_truth_key`` from *metadata* and looks up the matching entry
+    in ``GROUND_TRUTH_LIBRARY`` by its dict key or its ``name`` field.
     """
-    import sys
-    from pathlib import Path as _Path
-
-    # Make sure prompts.py is importable regardless of cwd
-    _root = _Path(__file__).parent
-    if str(_root) not in sys.path:
-        sys.path.insert(0, str(_root))
-
-    from prompts import GROUND_TRUTH_LIBRARY
-
     gt_key = metadata.get("ground_truth_key", "")
-    for entry in GROUND_TRUTH_LIBRARY.values():
-        if entry.get("name") == gt_key:
-            snippets = entry.get("snippets", [])
-            if not snippets:
-                raise ValueError(
-                    f"Ground truth entry '{gt_key}' has no snippets."
-                )
-            return list(snippets)
 
-    raise ValueError(
-        f"No entry with name='{gt_key}' found in GROUND_TRUTH_LIBRARY. "
-        f"Available names: {[v['name'] for v in GROUND_TRUTH_LIBRARY.values()]}"
-    )
+    # Try direct dict-key lookup first, then fall back to name-field scan
+    entry = GROUND_TRUTH_LIBRARY.get(gt_key)
+    if entry is None:
+        for candidate in GROUND_TRUTH_LIBRARY.values():
+            if candidate.get("name") == gt_key:
+                entry = candidate
+                break
+
+    if entry is None:
+        available = list(GROUND_TRUTH_LIBRARY.keys())
+        raise ValueError(
+            f"No entry for '{gt_key}' found in GROUND_TRUTH_LIBRARY. "
+            f"Available keys: {available}"
+        )
+
+    snippets = entry.get("snippets", [])
+    if not snippets:
+        raise ValueError(f"Ground truth entry '{gt_key}' has no snippets.")
+    return list(snippets)
 
 
 # ---------------------------------------------------------------------------

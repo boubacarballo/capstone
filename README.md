@@ -60,7 +60,10 @@ cd capstone
 # 2. Create the virtual environment and install dependencies
 uv sync
 
-# 3. Copy the environment template and fill in your LLM credentials
+# 3. Download required NLTK data (used by the post-processing scripts)
+uv run python -c "import nltk; nltk.download('punkt_tab')"
+
+# 4. Copy the environment template and fill in your LLM credentials
 cp .env.example .env
 ```
 
@@ -207,7 +210,68 @@ These modes control whether and how subjects appear/disappear, letting the simul
 
 ## Analysing Results
 
-After one or more runs, use the post-processing scripts:
+### NLI Coverage Scoring (`data_processing/process_experiment.py`)
+
+This is the primary post-processing script. It re-scores every agent snapshot using a neural NLI model (`cross-encoder/nli-deberta-v3-large`) and plots how well agents' summaries cover the ground-truth claims over time.
+
+**How it works:**
+
+1. Reads `run.json` from each run folder (contains snapshots, agent summaries, and metadata).
+2. Loads the ground-truth snippets for the run's `ground_truth_key` from `prompts.py`.
+3. For every agent at every snapshot, scores the agent's summary against each ground-truth claim: a claim is "covered" if at least one sentence in the summary entails it (NLI argmax = entailment).
+4. Plots per-agent coverage trajectories and the swarm average. Saves the plot as a PNG.
+
+**Basic usage:**
+
+```bash
+# Score and plot a single run (saves to experiments/<profile>/run_0001/coverage_over_time.png)
+uv run data_processing/process_experiment.py experiments/baseline__social/run_0001
+
+# Compare two runs side by side
+uv run data_processing/process_experiment.py \
+    experiments/baseline__self/run_0001 \
+    experiments/baseline__social/run_0001
+
+# Overlay multiple runs on one axes with custom legend labels
+uv run data_processing/process_experiment.py \
+    experiments/baseline__self/run_0001 \
+    experiments/baseline__social/run_0001 \
+    --overlay \
+    --legend-labels "Self learning" "Social learning"
+
+# Save to a custom path
+uv run data_processing/process_experiment.py experiments/baseline__social/run_0001 \
+    --output results/my_plot.png
+```
+
+**Output:**
+
+| Default output path | What it contains |
+|---|---|
+| `<run_folder>/coverage_over_time.png` | Per-agent coverage lines + bold swarm average |
+
+When multiple run folders are passed without `--output`, no default path is used and the plot is displayed interactively (or you must supply `--output`).
+
+**Key CLI flags:**
+
+| Flag | Description |
+|---|---|
+| `--output PATH` | Where to save the PNG |
+| `--overlay` | All runs on one axes instead of side-by-side subplots |
+| `--full-range` | Show the full x-axis; default clips at the plateau |
+| `--title TEXT` | Custom plot title |
+| `--legend-labels L1 L2 …` | Custom labels, one per run folder |
+| `--xlim X_MIN X_MAX` | Override x-axis range |
+| `--ylim Y_MIN Y_MAX` | Override y-axis range (default: -0.02 1.08) |
+| `--figsize W H` | Figure size in inches |
+| `--no-legend` | Hide the legend |
+| `--no-grid` | Hide the background grid |
+
+> **Note:** The NLI model (~1.5 GB) is downloaded from HuggingFace on first use and cached locally. Subsequent runs load it from cache.
+
+---
+
+### Other analysis scripts
 
 ```bash
 # Plot average scores for a single swarm experiment (across multiple runs)
