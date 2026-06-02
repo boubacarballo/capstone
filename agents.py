@@ -1,6 +1,7 @@
 from llm import LLM
 from vi import Agent
 from sensors import Sensor, Actuator
+from concurrent.futures import Future
 import random
 import pygame as pg
 from collections import deque
@@ -10,54 +11,28 @@ _SETTINGS = get_runtime_settings()
 _ENV_WIDTH = _SETTINGS["environment"]["width"]
 _ENV_HEIGHT = _SETTINGS["environment"]["height"]
 
-from story_registry import story_registry
 class knowledgeAgent(Agent):
     def __init__(self, context_size: int = 2, social_learning_enabled: bool = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
     
-        self.sensor = Sensor(self) # for global coordinate access
+        self.sensor = Sensor(self)
         self.actuator = Actuator(self) 
         self.llm = LLM(self) 
-        self.message_queue = deque() 
-        self.pending_llm_tasks = {}  
         self.role = "KNOWLEDGE_AGENT"
         self.pos.x = random.uniform(0, _ENV_WIDTH)
         self.pos.y = random.uniform(0, _ENV_HEIGHT)
-
-        self.surrounding_state = "ALONE" # this is to track the state when the agent is surrounded by other ones or not
+        self.surrounding_state = "ALONE"
         self.object_state = "NONE"
-        # story discovery tracking
-        self.discovered_stories = set()
-        self.agent_id = None
-
-        
-        
-        # Timer for periodic LLM summarization (every 20 seconds = 20,000ms)
-        self.last_summary_time = pg.time.get_ticks()
-        self.summary_interval = 10000  # 20 seconds in milliseconds
-
         self.p = deque(maxlen=context_size)
         self.t_summary = deque(maxlen=1)
         self.t_received = deque(maxlen=context_size)
-        self._pending_summary_task_id = None
-        self._pending_interaction_task_id = None
-        self._pending_private_info_task_id = None
+        self.pending_future: tuple[str, Future] | None = None
         self.social_learning_enabled = social_learning_enabled
         self.summary_history = []
-        self.score_history = []
-        #
 
     def is_llm_busy(self):
-        """Check if agent is currently processing any LLM task"""
-        has_pending_summary = (
-            self._pending_summary_task_id is not None or
-            self._pending_interaction_task_id is not None or
-            self._pending_private_info_task_id is not None
-        )
-        if has_pending_summary or (len(self.pending_llm_tasks) > 0):
-            return True
-        else:
-            return False
+        """Check if agent is currently processing any LLM task."""
+        return self.pending_future is not None and not self.pending_future[1].done()
 
     def update(self): # at every tick (timestep), this function will be run
 
@@ -98,21 +73,14 @@ class knowledgeAgent(Agent):
                 if number_of_subjects == 0:
                     self.object_state = "NONE"
 
-        # Process any completed LLM tasks
         # NOTE: Only update t_summary here. summary_history is managed by record_snapshot()
-        for task_id_result, result in self.llm.poll():
-            if self._pending_interaction_task_id and task_id_result == self._pending_interaction_task_id:
-                print(f"Agent {self.id} received interaction summary: {result}")
+        if self.pending_future is not None:
+            task_type, future = self.pending_future
+            if future.done():
+                result = future.result()
+                print(f"Agent {self.id} received {task_type} summary: {result}")
                 self.t_summary.append(result)
-                self._pending_interaction_task_id = None
-            elif self._pending_private_info_task_id and task_id_result == self._pending_private_info_task_id:
-                print(f"Agent {self.id} received private info summary: {result}")
-                self.t_summary.append(result)
-                self._pending_private_info_task_id = None
-            elif self._pending_summary_task_id and task_id_result == self._pending_summary_task_id:
-                print(f"Agent {self.id} received LLM summary: {result}")
-                self.t_summary.append(result)
-                self._pending_summary_task_id = None
+                self.pending_future = None
         
         
     
@@ -128,10 +96,9 @@ class knowledgeAgent(Agent):
         received_summaries = " ".join(self.t_received)
         
         print(f"Agent {self.id} merging summaries for interaction...")
-        self._pending_interaction_task_id = self.llm.submit_interaction(
-            summary=own_summary,
-            received_info=received_summaries
-        )
+        future = self.llm.submit_interaction(summary=own_summary, received_info=received_summaries)
+        if future is not None:
+            self.pending_future = ("interaction", future)
         print(f"Agent {self.id} scheduled interaction summarization at {pg.time.get_ticks()}ms")
     
     def summarize_private_information(self):
@@ -145,10 +112,9 @@ class knowledgeAgent(Agent):
         private_info = " ".join(self.p) if self.p else ""
         
         print(f"Agent {self.id} summarizing private information...")
-        self._pending_private_info_task_id = self.llm.submit_private_info(
-            summary=own_summary,
-            private_info=private_info
-        )
+        future = self.llm.submit_private_info(summary=own_summary, private_info=private_info)
+        if future is not None:
+            self.pending_future = ("private info", future)
         print(f"Agent {self.id} scheduled private information summarization at {pg.time.get_ticks()}ms")
     def get_velocities(self):
         # Constant forward motion; wall bounce (reflect direction) is handled in Environment._bounce_agent_off_walls
