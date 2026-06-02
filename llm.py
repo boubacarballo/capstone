@@ -1,5 +1,4 @@
 import os
-import uuid
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, Future
 from openai import OpenAI
@@ -48,7 +47,6 @@ class LLM:
             )
 
         self._executor = _LLM_EXECUTOR
-        self._futures: dict[str, Future] = {}
 
         # Persistent conversation history per agent
         self.messages: list[dict[str, str]] = [
@@ -115,70 +113,25 @@ class LLM:
             self.messages.pop()
             raise LLMRequestError(f"Ollama chat request failed: {exc}") from exc
 
-    def submit_interaction(self, summary: str, received_info: str) -> str:
-        """
-        Submit a fusion task for summary + received information from other agents.
-        Returns a task_id to poll for results.
-        """
-        # Skip LLM call if there is nothing real to merge
+    def submit_interaction(self, summary: str, received_info: str) -> Future | None:
+        """Submit a fusion task for summary + received information from other agents."""
         if not summary and not received_info:
-            task_id = uuid.uuid4().hex
-            future = self._executor.submit(lambda: "")
-            self._futures[task_id] = future
-            return task_id
+            return None
         prompt = INTERACTION_PROMPT.format(
             summary=summary or "(no prior knowledge)",
             received_info=received_info or "(no received information)"
         )
-        task_id = uuid.uuid4().hex
-        future = self._executor.submit(self.chat, prompt)
-        self._futures[task_id] = future
-        return task_id
+        return self._executor.submit(self.chat, prompt)
 
-    def submit_private_info(self, summary: str, private_info: str) -> str:
-        """
-        Submit a fusion task for summary + privately discovered information from sites.
-        Returns a task_id to poll for results.
-        """
-        # Skip LLM call if there is nothing real to merge
+    def submit_private_info(self, summary: str, private_info: str) -> Future | None:
+        """Submit a fusion task for summary + privately discovered information from sites."""
         if not summary and not private_info:
-            task_id = uuid.uuid4().hex
-            future = self._executor.submit(lambda: "")
-            self._futures[task_id] = future
-            return task_id
+            return None
         prompt = PRIVATE_INFO_PROMPT.format(
             summary=summary or "(no prior knowledge)",
             private_info=private_info or "(no new information)"
         )
-        task_id = uuid.uuid4().hex
-        future = self._executor.submit(self.chat, prompt)
-        self._futures[task_id] = future
-        return task_id
-
-    def poll(self) -> list[tuple[str, str]]:
-        """Check for completed tasks and return their results."""
-        completed: list[tuple[str, str]] = []
-        to_remove: list[str] = []
-        fatal_exc: Exception | None = None
-
-        for task_id, fut in list(self._futures.items()):
-            if fut.done():
-                to_remove.append(task_id)
-                try:
-                    result = fut.result()
-                    completed.append((task_id, result))
-                except LLMRequestError as exc:
-                    fatal_exc = exc
-                except Exception as exc:
-                    completed.append((task_id, f"LLM error: {exc}"))
-
-        for task_id in to_remove:
-            self._futures.pop(task_id, None)
-
-        if fatal_exc is not None:
-            raise fatal_exc
-
-        return completed
+        return self._executor.submit(self.chat, prompt)
 
     def get_context_stats(self) -> dict:
         """Return context growth trajectory and final context size for this agent."""
@@ -189,8 +142,3 @@ class LLM:
             "context_growth": self.context_growth,
         }
 
-    def cancel_all(self) -> None:
-        """Cancel all pending tasks."""
-        for fut in self._futures.values():
-            fut.cancel()
-        self._futures.clear()
