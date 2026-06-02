@@ -8,6 +8,6 @@ __pycache__
 # Editor
 .vscode
 .zed
-
+experiments
 # Violet Replays
 *.parquet
