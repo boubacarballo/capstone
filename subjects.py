@@ -24,9 +24,8 @@ class SubjectAgent(Agent):
         self.role = "SUBJECT"
         self.info = info
         self.actuator = Actuator(self)
-        self.sensor = Sensor(self)  # For border detection so moving subjects bounce off walls
-        self.visible = True  # Whether knowledge agents can interact with this subject
-        # Movement configuration (controls whether subjects move in the environment)
+        self.sensor = Sensor(self)  # needed so moving subjects bounce off walls
+        self.visible = True  # when False, knowledge agents skip this subject
         self._movement_enabled = bool(_MOVEMENT_CFG.get("enabled", False))
         self._movement_speed = float(_MOVEMENT_CFG.get("speed", 1.5))
         self._movement_angular_velocity = float(_MOVEMENT_CFG.get("angular_velocity", 5.0))
@@ -36,23 +35,15 @@ class SubjectAgent(Agent):
         pass
     
     def set_visible(self, visible: bool):
-        """Set visibility state and update sprite alpha accordingly."""
         self.visible = visible
-        # Visual feedback: dim the sprite when invisible
         if hasattr(self, 'image') and self.image is not None:
-            self.image.set_alpha(255 if visible else 40)
+            self.image.set_alpha(255 if visible else 40)  # dim sprite when invisible
 
     def get_velocities(self):
-        """
-        Return linear and angular velocities for subject agents.
-        - When movement is disabled, subjects remain static.
-        - When enabled, subjects perform a simple random-walk style movement,
-          similar in spirit to knowledge agents but typically slower.
-        """
         if not self._movement_enabled:
             return 0, 0
 
-        # Constant forward motion; wall bounce (reflect direction) is handled in Environment._bounce_agent_off_walls
+        # Wall bounce is handled in Environment._bounce_agent_off_walls
         linear_speed = self._movement_speed
         angular_velocity = 0.0
         return linear_speed, angular_velocity

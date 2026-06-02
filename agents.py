@@ -34,25 +34,20 @@ class knowledgeAgent(Agent):
         self.summary_history = []
 
     def is_llm_busy(self):
-        """Check if agent is currently processing any LLM task."""
         return self.pending_future is not None and not self.pending_future[1].done()
 
-    def update(self): # at every tick (timestep), this function will be run
-
+    def update(self):
         neighbors = list(self.in_proximity_performance())
-        # Only interact with VISIBLE subjects (supports information teleportation)
+        # Only count visible subjects; invisible ones are teleportation-pool placeholders
         subjects = [agent for agent in neighbors if agent.role == "SUBJECT" and getattr(agent, 'visible', True)]
         agents = [agent for agent in neighbors if agent.role == "KNOWLEDGE_AGENT"]
         number_of_neighbors = len(agents)
         number_of_subjects = len(subjects)
 
-        #finite state machine for surrounding state
-
         if self.social_learning_enabled:
             match self.surrounding_state:
                 case "ALONE":
                     if number_of_neighbors > 0:
-                        # here we will exchange information (if not busy)
                         if not self.is_llm_busy():
                             self.sensor.exchange_context_with_agents(agents)
                             self.summarize_interaction()
@@ -62,7 +57,6 @@ class knowledgeAgent(Agent):
                     if number_of_neighbors == 0:
                         self.surrounding_state = "ALONE"
 
-        #finite state machine for object state
         match self.subject_state:
             case "AWAY":
                 if number_of_subjects > 0:
@@ -76,7 +70,7 @@ class knowledgeAgent(Agent):
                 if number_of_subjects == 0:
                     self.subject_state = "AWAY"
 
-        # NOTE: Only update t_summary here. summary_history is managed by record_snapshot()
+        # summary_history is written by record_snapshot(), not here
         if self.pending_future is not None:
             task_type, future = self.pending_future
             if future.done():
@@ -91,10 +85,6 @@ class knowledgeAgent(Agent):
         
     
     def summarize_interaction(self):
-        """
-        Summarize interaction between agents by merging this agent's summary 
-        with summaries received from other agents.
-        """
         if self.is_llm_busy():
             return
         
@@ -106,9 +96,6 @@ class knowledgeAgent(Agent):
             self.pending_future = ("interaction", future)
     
     def summarize_private_information(self):
-        """
-        Summarize private information collected from sites (stored in p).
-        """
         if self.is_llm_busy():
             return
 
@@ -119,7 +106,7 @@ class knowledgeAgent(Agent):
         if future is not None:
             self.pending_future = ("private info", future)
     def get_velocities(self):
-        # Constant forward motion; wall bounce (reflect direction) is handled in Environment._bounce_agent_off_walls
+        # Wall bounce is handled in Environment._bounce_agent_off_walls
         linear_speed = 2
         angular_velocity = 0.0
         return linear_speed, angular_velocity

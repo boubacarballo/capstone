@@ -549,7 +549,7 @@ def main(
         List of paths to experiment run directories.
     output_path :
         Path to save the output plot. Defaults to
-        ``<run_folder>/coverage_over_time.png`` when a single run is given.
+        ``<run_folder>/coverage_over_time.pdf`` when a single run is given.
     title :
         Custom plot title.
     nli_model :
@@ -609,7 +609,7 @@ def main(
     # Resolve output path
     out = output_path
     if out is None and len(run_folders) == 1:
-        out = run_folders[0] / "coverage_over_time.png"
+        out = run_folders[0] / "coverage_over_time.pdf"
 
     plot_kwargs: dict = dict(
         output_path=out,
@@ -663,7 +663,7 @@ if __name__ == "__main__":
         default=None,
         help=(
             "Output path for the plot image (PNG). "
-            "Defaults to <run_folder>/coverage_over_time.png for a single run."
+            "Defaults to <run_folder>/coverage_over_time.pdf for a single run."
         ),
     )
     parser.add_argument(

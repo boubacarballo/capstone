@@ -9,8 +9,7 @@ class Sensor:
         self.agent = agent
 
     def exchange_context_with_agents(self, new_agent_objects):
-        "Assuming that we have multiple agents in our proximity, we only want to get the exchange from the first agent we encounter"
-
+        # Only exchange with the first neighbor to avoid redundant merges in the same tick
         first_agent = new_agent_objects[0]
         first_agent_summary = first_agent.t_summary[-1] if len(first_agent.t_summary) > 0 else ""
         current_agent_summary = self.agent.t_summary[-1] if len(self.agent.t_summary) > 0 else ""
@@ -27,19 +26,17 @@ class Sensor:
             if agent.role == "SUBJECT":
                 self.agent.p.append(agent.info)
 
-class Actuator: #this is what we are going to use to move the agent
+class Actuator:
 
     def __init__(self, agent):
         self.agent = agent
         self.agent.current_angle = random.uniform(0, 360)
 
-    def update_position(self, linear_speed: int, angular_velocity: int): # this should run at every step
-
+    def update_position(self, linear_speed: int, angular_velocity: int):
         self.agent.current_angle += angular_velocity
         self.agent.current_angle %= 360
 
-        self.agent.move.from_polar((linear_speed, self.agent.current_angle)) #convert from polar to cartesian
-
+        self.agent.move.from_polar((linear_speed, self.agent.current_angle))  # polar → cartesian
         self.agent.pos += self.agent.move
         
         

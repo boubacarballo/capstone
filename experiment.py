@@ -25,13 +25,11 @@ def run_simulation():
     if not ground_truth_snippets:
         raise ValueError("Active ground truth set must contain at least one snippet.")
 
-    # Information teleportation settings
     teleport_settings = settings.get("information_teleportation", {})
     teleport_enabled = teleport_settings.get("enabled", False)
     teleport_mode = teleport_settings.get("mode", "shuffle")
     initial_active_count = teleport_settings.get("initial_active_count", 5)
-    
-    # For dynamic_pool mode: shuffle and split snippets
+
     is_dynamic_pool = teleport_enabled and teleport_mode == "dynamic_pool"
     is_constant_ratio_pool = teleport_enabled and teleport_mode == "constant_ratio_pool"
     is_exponential_swap_pool = teleport_enabled and teleport_mode == "dynamic_pool_with_reemission"
@@ -39,9 +37,7 @@ def run_simulation():
     snippet_pool = []
     
     if is_dynamic_pool:
-        # Shuffle all snippets
         random.shuffle(ground_truth_snippets)
-        # Split into initial active and pool
         initial_active_count = min(initial_active_count, len(ground_truth_snippets))
         initial_snippets = ground_truth_snippets[:initial_active_count]
         snippet_pool = ground_truth_snippets[initial_active_count:]
@@ -49,33 +45,29 @@ def run_simulation():
         num_subject_agents = initial_active_count
         logger.info("Dynamic pool mode: %d initial subjects, %d in pool", initial_active_count, len(snippet_pool))
     elif is_constant_ratio_pool:
-        # Spawn ALL snippets; environment will control which fraction is visible
         num_fragments = len(ground_truth_snippets)
         num_subject_agents = num_fragments
         active_ratio = teleport_settings.get("active_ratio", 0.2)
         target_active = max(1, round(active_ratio * num_subject_agents))
-        logger.info("Constant ratio pool mode: %d total subjects, %d active at %.0f%% ratio",
+        logger.info("Constant ratio pool: %d total subjects, %d active at %.0f%%",
                     num_subject_agents, target_active, active_ratio * 100)
     elif is_exponential_swap_pool:
-        # Spawn ALL snippets; environment will control visibility via a single Poisson timer
         num_fragments = len(ground_truth_snippets)
         num_subject_agents = num_fragments
         active_ratio = teleport_settings.get("active_ratio", 0.2)
         mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
         target_active = max(1, round(active_ratio * num_subject_agents))
-        logger.info("Dynamic pool (with reemission) mode: %d total subjects, %d initially active at %.0f%% ratio, mean swap interval %.1fs",
+        logger.info("Dynamic pool (with reemission): %d total, %d initially active at %.0f%%, mean swap %.1fs",
                     num_subject_agents, target_active, active_ratio * 100, mean_swap_time)
     elif is_exponential_one_time_pool:
-        # Spawn ALL snippets; each subject appears at most once (no re-appearances after swap-out)
         num_fragments = len(ground_truth_snippets)
         num_subject_agents = num_fragments
         active_ratio = teleport_settings.get("active_ratio", 0.2)
         mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
         target_active = max(1, round(active_ratio * num_subject_agents))
-        logger.info("Dynamic pool (without reemission) mode: %d total subjects, %d initially active at %.0f%% ratio, mean swap interval %.1fs (no re-appearances)",
+        logger.info("Dynamic pool (no reemission): %d total, %d initially active at %.0f%%, mean swap %.1fs",
                     num_subject_agents, target_active, active_ratio * 100, mean_swap_time)
     else:
-        # Standard mode: align subject agent count with available snippets
         num_fragments = len(ground_truth_snippets)
         if num_subject_agents <= 0 or num_subject_agents > num_fragments:
             num_subject_agents = num_fragments
@@ -123,11 +115,9 @@ def run_simulation():
             subject.info = fragment
             subject.pos.update(position)
 
-    # Initialize dynamic pool if in dynamic_pool mode
     if is_dynamic_pool and snippet_pool:
         simulation.initialize_dynamic_pool(snippet_pool)
-    
-    # Initialize constant ratio pool if in constant_ratio_pool mode
+
     if is_constant_ratio_pool:
         simulation.initialize_constant_ratio_pool()
 
@@ -139,7 +129,6 @@ def run_simulation():
     
     return simulation
 
-# Create and run the story environment
 if __name__ == "__main__":
     simulation = None
     try:

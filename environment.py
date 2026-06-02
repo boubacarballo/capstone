@@ -23,12 +23,10 @@ class Environment(Simulation):
         self.num_subject_agents = num_subject_agents
         self.social_learning_enabled = self.runtime_settings["social_learning_enabled"]
 
-        # Fixed number of data points for consistency
         self.num_snapshots = int(self.runtime_settings.get("num_snapshots", 60))
         self.snapshot_interval_seconds = float(self.runtime_settings.get("snapshot_interval_seconds", 2.0))
         self.snapshots_recorded = 0
 
-        # Subject visibility / information teleportation settings
         teleport_settings = self.runtime_settings.get("information_teleportation", {})
         self.teleportation_enabled = teleport_settings.get("enabled", False)
         self.teleportation_mode = teleport_settings.get("mode")
@@ -84,11 +82,10 @@ class Environment(Simulation):
 
             linear_speed, angular_velocity = agent.get_velocities()
             agent.actuator.update_position(linear_speed, angular_velocity)
-            # Bounce off walls: reflect direction and nudge back inside so agents don't get stuck
             self._bounce_agent_off_walls(agent, env_w, env_h)
 
     def _bounce_agent_off_walls(self, agent: Agent, env_w: float, env_h: float):
-        """If agent is outside or on the boundary, reflect its heading and clamp position inside."""
+        """Reflect heading and clamp position when agent hits a wall."""
         bounced_x = False
         bounced_y = False
         if agent.pos.x < 0:
@@ -109,55 +106,45 @@ class Environment(Simulation):
             bounced_y = True
 
     def clean_llm_result(self, result: str) -> str:
-        """Clean and validate LLM result. Returns empty string if invalid."""
+        """Strip quotes/whitespace and return empty string if the result is nonsense."""
         if not result:
             return ""
-        
+
         cleaned = result.strip()
         while cleaned and cleaned[0] in '"\'\\ ' and cleaned[-1] in '"\'\\ ':
             cleaned = cleaned.strip().strip('"\'\\')
         empty_responses = {'""', "''", '\"\"', "\'\'", "null", "None", "N/A", "n/a", "empty"}
         if cleaned.lower() in empty_responses or cleaned in empty_responses:
             return ""
-        
-        # Skip very short nonsense
         if len(cleaned) < 5:
             return ""
-        
-        # Must contain at least one alphanumeric character
         if not any(c.isalnum() for c in cleaned):
             return ""
-        
+
         return cleaned
     def run(self):
-        """
-        Run the simulation until all snapshots are recorded.
-        Duration = num_snapshots × snapshot_interval_seconds
-        """
         self._running = True
         self.next_snapshot_time = self.snapshot_interval_seconds
         
         total_duration = self.num_snapshots * self.snapshot_interval_seconds
         logger.debug("Starting experiment: %d snapshots x %.1fs = %.1fs total", self.num_snapshots, self.snapshot_interval_seconds, total_duration)
-        
+
         while self._running:
             self.tick()
             self.tick_count += 1
 
             elapsed_seconds = self._elapsed_sim_seconds()
-            
+
             if self.teleportation_enabled:
                 if self.teleportation_mode == "dynamic_pool_with_reemission":
                     self.dynamic_pool_with_reemission_update()
                 elif self.teleportation_mode == "dynamic_pool_without_reemission":
                     self.dynamic_pool_without_reemission_update()
-            
-            # Check if it's time for a snapshot
+
             if elapsed_seconds >= self.next_snapshot_time and self.snapshots_recorded < self.num_snapshots:
                 self.record_snapshot()
                 self.next_snapshot_time += self.snapshot_interval_seconds
-            
-            # Stop when we have all snapshots
+
             if self.snapshots_recorded >= self.num_snapshots:
                 logger.debug("All %d snapshots recorded. Ending experiment.", self.num_snapshots)
                 self.stop()
@@ -170,7 +157,6 @@ class Environment(Simulation):
 
 
     def record_snapshot(self):
-        """Record a snapshot for ALL agents. Always records exactly one data point per agent."""
         for agent in self._agents:
             if agent.role == "KNOWLEDGE_AGENT":
                 summary = " ".join(agent.t_summary)
@@ -192,13 +178,7 @@ class Environment(Simulation):
         return (pg.time.get_ticks() - self.start_time) / 1000.0
 
     def initialize_dynamic_pool_with_reemission(self):
-        """
-        Initialize exponential swap pool mode.
-        All subjects are already spawned. Activate round(active_ratio * N) of them
-        at random positions, hide the rest, then sample the first swap time from
-        an exponential distribution with mean = mean_swap_time.
-        No per-subject lifetimes are used — a single global timer drives all swaps.
-        """
+        """Activate active_ratio fraction of subjects; a single Poisson timer drives all future swaps."""
         subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
         total = len(subjects)
         target_active = max(1, round(self.active_ratio * total))
@@ -226,11 +206,7 @@ class Environment(Simulation):
                     target_active, total, self.active_ratio * 100, self.next_swap_time)
 
     def dynamic_pool_with_reemission_update(self):
-        """
-        Single-event Poisson swap: do nothing until next_swap_time is reached, then
-        hide exactly one random active subject and show exactly one random inactive subject.
-        Immediately sample the next swap time from Exp(mean_swap_time).
-        """
+        """At each Poisson event: swap one active subject out and one inactive subject in."""
         if self.next_swap_time is None:
             return
 
@@ -252,17 +228,13 @@ class Environment(Simulation):
             incoming.pos.update((random.uniform(50, env_width - 50), random.uniform(50, env_height - 50)))
             incoming.set_visible(True)
 
-            new_active_count = len(active)  # net change is zero: −1 +1
+            new_active_count = len(active)  # net zero: one out, one in
             logger.debug("Dynamic pool swap (reemission): 1 out, 1 in. Active: %d/%d", new_active_count, len(subjects))
 
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
     def initialize_dynamic_pool_without_reemission(self):
-        """
-        Initialize exponential one-time pool mode.
-        Identical to initialize_dynamic_pool_with_reemission, but the initially-active subjects
-        are recorded in _appeared_subjects so they can never re-enter once swapped out.
-        """
+        """Same as with-reemission init, but tracks appeared subjects so they can never re-enter."""
         subjects = [a for a in self._agents if getattr(a, "role", None) == "SUBJECT"]
         total = len(subjects)
         target_active = max(1, round(self.active_ratio * total))
@@ -292,13 +264,7 @@ class Environment(Simulation):
                     target_active, total, self.active_ratio * 100, never_appeared_count, self.next_swap_time)
 
     def dynamic_pool_without_reemission_update(self):
-        """
-        Single-event Poisson swap with permanent retirement.
-        When the timer fires: one random active subject is hidden and permanently retired
-        (added to _appeared_subjects so it will never be swapped back in).
-        A replacement is drawn only from subjects that have NEVER appeared before.
-        If no never-appeared subjects remain, the active count decreases by one.
-        """
+        """At each Poisson event: retire one active subject; replace from never-appeared pool if any remain."""
         if self.next_swap_time is None:
             return
 
@@ -313,7 +279,7 @@ class Environment(Simulation):
         if active:
             outgoing = random.choice(active)
             outgoing.set_visible(False)
-            # outgoing was already in _appeared_subjects from init or a previous swap-in
+            # outgoing is already in _appeared_subjects from init or a prior swap-in
 
             if never_appeared:
                 incoming = random.choice(never_appeared)
@@ -330,12 +296,11 @@ class Environment(Simulation):
         self.next_swap_time = current_time + random.expovariate(1.0 / self.mean_swap_time)
 
     def save_experiment_data(self):
-        """Save experiment data and plot to the experiments directory"""
+        """Write run.json to the run directory."""
         if self._experiment_saved:
             logger.warning("Experiment data already saved; skipping duplicate save.")
             return
         try:
-            # Generate logical timestamps: [2, 4, 6, ..., 120] based on snapshot interval
             interval = self.snapshot_interval_seconds
             timestamps = [int((i + 1) * interval) for i in range(self.num_snapshots)]
             

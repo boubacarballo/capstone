@@ -30,10 +30,8 @@ def shutdown_executor() -> None:
 
 class LLM:
     def __init__(self):
-        # Provider selection: "openai" | "ollama"
         self.provider = os.getenv("LLM_PROVIDER", "ollama").lower()
 
-        # Default models per provider
         default_models = {
             "openai": "gpt-4o",
             "ollama": "gemma4:e4b",
@@ -46,36 +44,28 @@ class LLM:
                 base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
             )
 
-        # Initialize global executor if needed
         global _LLM_EXECUTOR
         if _LLM_EXECUTOR is None:
             max_workers = int(os.getenv("LLM_MAX_WORKERS", "200"))
-            _LLM_EXECUTOR = ThreadPoolExecutor(
-                max_workers=max_workers, 
-                thread_name_prefix="llm"
-            )
+            _LLM_EXECUTOR = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="llm")
 
         self._executor = _LLM_EXECUTOR
 
-        # Persistent conversation history per agent
         self.messages: list[dict[str, str]] = [
             {"role": "system", "content": system_prompt},
         ]
 
-        # Context growth tracking: one entry per successful LLM call.
-        # prompt_tokens reflects the full context sent (all prior turns + new message).
+        # One entry per successful call; prompt_tokens reflects the full context sent.
         self.context_growth: list[dict] = []
 
         logger.debug("LLM initialized: provider=%s, model=%s", self.provider, self.model)
 
     def chat(self, prompt: str) -> str:
-        """Make a chat completion request."""
         if self.provider == "ollama":
             return self._ollama_chat(prompt)
         return self._openai_chat(prompt)
 
     def _openai_chat(self, prompt: str) -> str:
-        """chat.completions request via OpenAI."""
         self.messages.append({"role": "user", "content": prompt})
         try:
             response = self.client.chat.completions.create(
@@ -90,8 +80,7 @@ class LLM:
                     "prompt_tokens": response.usage.prompt_tokens,
                     "completion_tokens": response.usage.completion_tokens,
                 })
-            # Reset to stateless: each fusion call is independent, so prior
-            # conversation history only causes summary degradation over time.
+            # Reset history after each call: accumulated turns degrade summary quality over time.
             self.messages = [self.messages[0]]
             return reply
         except Exception as exc:
@@ -100,7 +89,6 @@ class LLM:
             raise LLMRequestError(f"LLM chat request failed: {exc}") from exc
 
     def _ollama_chat(self, prompt: str) -> str:
-        """Make a chat request using native Ollama library."""
         self.messages.append({"role": "user", "content": prompt})
         try:
             response = ollama.chat(
@@ -115,8 +103,7 @@ class LLM:
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
             })
-            # Reset to stateless: each fusion call is independent, so prior
-            # conversation history only causes summary degradation over time.
+            # Reset history after each call: accumulated turns degrade summary quality over time.
             self.messages = [self.messages[0]]
             return reply
         except Exception as exc:
@@ -125,7 +112,6 @@ class LLM:
             raise LLMRequestError(f"Ollama chat request failed: {exc}") from exc
 
     def submit_interaction(self, summary: str, received_info: str) -> Future | None:
-        """Submit a fusion task for summary + received information from other agents."""
         if not summary and not received_info:
             return None
         prompt = INTERACTION_PROMPT.format(
@@ -135,7 +121,6 @@ class LLM:
         return self._executor.submit(self.chat, prompt)
 
     def submit_private_info(self, summary: str, private_info: str) -> Future | None:
-        """Submit a fusion task for summary + privately discovered information from sites."""
         if not summary and not private_info:
             return None
         prompt = PRIVATE_INFO_PROMPT.format(
@@ -145,7 +130,6 @@ class LLM:
         return self._executor.submit(self.chat, prompt)
 
     def get_context_stats(self) -> dict:
-        """Return context growth trajectory and final context size for this agent."""
         final_context_size = self.context_growth[-1]["prompt_tokens"] if self.context_growth else 0
         return {
             "final_context_size": final_context_size,
