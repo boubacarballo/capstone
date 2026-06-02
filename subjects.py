@@ -5,7 +5,7 @@ from runtime_config import get_runtime_settings
 _SETTINGS = get_runtime_settings()
 _MOVEMENT_CFG = _SETTINGS.get("movement", {}) or {}
 class Subject:
-    def __init__(sel, information: str, position: tuple):
+    def __init__(self, information: str, position: tuple):
         self.information = information
         self.position = position
 
