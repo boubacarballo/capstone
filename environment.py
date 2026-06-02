@@ -11,7 +11,7 @@ import random
 
 
 class Environment(Simulation):
-    def __init__(self, llm_provider: str, llm_model: str, config=None,  num_knowledge_agents: int = 2, num_subject_agents: int = 5):
+    def __init__(self, config=None, num_knowledge_agents: int = 2, num_subject_agents: int = 5):
         
         super().__init__(config)
 

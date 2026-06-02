@@ -81,11 +81,9 @@ def run_simulation():
 
     simulation_config = Config(window=Window(env_width, env_height), seed=random.randint(0, 10))
     simulation = Environment(
-        llm_provider="Ollama",
-        llm_model="gemma3",
+        config=simulation_config,
         num_knowledge_agents=num_knowledge_agents,
         num_subject_agents=num_subject_agents,
-        config=simulation_config,
     )
 
     num_snapshots = settings.get("num_snapshots", 30)
