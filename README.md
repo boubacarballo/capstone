@@ -1,4 +1,4 @@
-# LLM-Augmented Swarm Intelligence: Knowledge Acquisition in Multi-Agent Systems
+# LLM-Augmented Swarm Intelligence (LASI): Knowledge Acquisition in Multi-Agent Systems
 
 A research simulation that studies how groups of LLM-enabled agents collectively reconstruct a hidden narrative from distributed information sources — and whether sharing knowledge with peers helps or hurts that process.
 
