@@ -1,42 +1,75 @@
 # LLM-Augmented Swarm Intelligence: Knowledge Acquisition in Multi-Agent Systems
 
-A research simulation that pits **self-learning** swarms against **social-learning** swarms and measures how quickly and how accurately a group of LLM-enabled agents can collectively reconstruct a hidden narrative from distributed information sources.
+A research simulation that studies how groups of LLM-enabled agents collectively reconstruct a hidden narrative from distributed information sources — and whether sharing knowledge with peers helps or hurts that process.
 
 Built on top of [Violet](https://github.com/m-rots/violet), a lightweight 2D agent simulation framework.
 
 ---
 
-## What This Project Does
+## Research Questions
 
-Agents roam a 2D environment populated by **subject agents** — stationary or mobile NPCs that each carry one snippet of a larger ground-truth narrative (e.g., a career fair scene). When a knowledge agent steps near a subject it reads that snippet, passes it to an LLM, and updates its internal summary. Periodically, agents that are near each other can exchange summaries and fuse them with the LLM.
+This project investigates two nested questions:
 
-At fixed time intervals the simulation records each agent's current summary and scores it against the ground truth using a combined semantic + lexical metric. The experiment ends after a configured number of snapshots, and all results are persisted to disk.
+1. **Self vs. social learning** — Does an agent swarm that shares summaries peer-to-peer reconstruct a hidden ground-truth narrative faster and more accurately than a swarm where each agent only accumulates its own observations?
 
-The central research question is:
+2. **Effect of information scarcity** — How does that self/social gap change when information sources appear and disappear over time, rather than remaining permanently available?
 
-> Does social learning (agents sharing summaries peer-to-peer) lead to faster or more accurate collective knowledge acquisition than self-learning (agents only accumulating their own observations)?
+The experiment profiles are treatments on these two variables. You run the same profile twice — once in `self` mode, once in `social` mode — and compare the resulting coverage trajectories.
 
 ---
 
-## Architecture Overview
+## How the Simulation Works
+
+Agents roam a 2D grid populated by **subject agents** — stationary NPCs each carrying one snippet of a larger ground-truth narrative (a career fair scene). When a knowledge agent steps near a subject, it reads that snippet and submits it to an LLM, which integrates it into the agent's running summary. In social learning mode, agents that come near each other also exchange summaries and fuse them via LLM.
+
+At fixed time intervals, the simulation scores every agent's summary against the ground truth using NLI entailment (`cross-encoder/nli-deberta-v3-large`). A claim is "covered" if at least one sentence in the agent's summary entails it. The experiment ends after a configured number of snapshots.
+
+### Agent lifecycle (per tick)
+
+1. **Proximity scan** — the agent lists all nearby knowledge agents and subject agents.
+2. **Subject encounter** — if a visible subject is nearby and the agent is not busy with an LLM task, it reads the subject's snippet and submits an async LLM task to integrate it into its summary.
+3. **Peer encounter** — if social learning is enabled and another knowledge agent is nearby, the agent exchanges its most recent summary with that peer and submits an async LLM fusion task.
+4. **LLM polling** — completed async tasks are drained; their results update the agent's summary buffer.
+
+### LLM fusion
+
+Two prompt templates govern knowledge integration:
+
+- **Private info prompt** — merges a newly observed snippet with the agent's existing summary.
+- **Interaction prompt** — merges a peer's summary with the agent's existing summary.
+
+Both enforce lossless merging: every detail in the prior summary must appear in the output with equal or greater specificity. Details are only dropped if directly contradicted by new information.
+
+### Information teleportation
+
+The three experiment profiles control how visible subject agents are over time:
+
+| Profile | Behaviour |
+|---|---|
+| `baseline` | All subjects are always visible. Full information available throughout. |
+| `dynamic_pool_with_reemission` | Only a fraction of subjects are visible at any time. A Poisson timer fires and swaps one active subject for one inactive one. Retired subjects can re-enter later. |
+| `dynamic_pool_without_reemission` | Same as above, but each subject can only ever appear once. Once retired, it is gone permanently. |
+
+The `active_ratio` and `mean_swap_time` parameters in `configs.yaml` control what fraction of subjects are visible and how frequently swaps occur.
+
+---
+
+## Architecture
 
 ```
 experiment.py          ← entry point; wires everything together
 ├── agents.py          ← knowledgeAgent: FSM-driven; senses, shares, summarises
 ├── subjects.py        ← SubjectAgent: carries one ground-truth snippet
-├── environment.py     ← Environment (extends Simulation): snapshot loop, scoring,
-│                         information-teleportation modes, output persistence
+├── environment.py     ← Environment: snapshot loop, scoring, teleportation, persistence
 ├── sensors.py         ← Sensor (proximity reads) + Actuator (movement)
 ├── llm.py             ← async LLM wrapper: Ollama / OpenAI
-├── metrics.py         ← cosine, BM25, BERTScore, NLI scorers + heatmap renderer
-├── constants.py       ← system prompts + ground-truth library (3 difficulty tiers)
-├── story_registry.py  ← alternative "Lost Artifact" narrative scenario
-├── runtime_config.py  ← reads configs.yaml and resolves the active profile
+├── prompts.py         ← system prompt + ground-truth library (3 difficulty tiers)
+├── runtime_config.py  ← reads configs.yaml and resolves the active experiment
 └── configs/
     └── configs.yaml   ← all experiment profiles and global settings
 ```
 
-Output from each run lands in `experiments/<profile>/run_NNNN/`.
+Output from each run lands in `experiments/<profile>__<mode>/run_NNNN/`.
 
 ---
 
@@ -45,7 +78,7 @@ Output from each run lands in `experiments/<profile>/run_NNNN/`.
 | Requirement | Notes |
 |---|---|
 | Python 3.13+ | enforced by `pyproject.toml` |
-| [uv](https://docs.astral.sh/uv/getting-started/installation/) | fast package manager / venv runner |
+| [uv](https://docs.astral.sh/uv/getting-started/installation/) | package manager / venv runner |
 | An LLM backend | Ollama (local, default) or OpenAI (cloud) — see below |
 
 ---
@@ -60,10 +93,7 @@ cd capstone
 # 2. Create the virtual environment and install dependencies
 uv sync
 
-# 3. Download required NLTK data (used by the post-processing scripts)
-uv run python -c "import nltk; nltk.download('punkt_tab')"
-
-# 4. Copy the environment template and fill in your LLM credentials
+# 3. Copy the environment template and fill in your LLM credentials
 cp .env.example .env
 ```
 
@@ -71,9 +101,7 @@ cp .env.example .env
 
 ## Configuration
 
-### LLM Backend (`.env`)
-
-Choose one backend and edit `.env` accordingly:
+### LLM backend (`.env`)
 
 ```dotenv
 # ── Ollama (local, default) ──────────────────────────────
@@ -97,134 +125,106 @@ ollama serve          # in one terminal
 ollama pull gemma4:e4b
 ```
 
-### Experiment Profile (`configs/configs.yaml`)
+### Experiment profile (`configs/configs.yaml`)
 
-Set `experiments.active_profile` to the profile you want to run:
+Two top-level keys control what runs:
 
 ```yaml
-experiments:
-  active_profile: baseline_social   # ← change this
-  num_snapshots: 400
-  snapshot_interval_seconds: 3.0
+active_experiment: baseline       # which profile to use
+learning_mode: social             # self | social
 ```
 
-Key profile settings:
+`learning_mode` is a global toggle — it is not embedded in the profile. To compare self vs. social on the same experiment, run the simulation twice, flipping this value between runs.
 
-| Key | Description |
-|---|---|
-| `swarm_type` | `self_learning` or `social_learning` |
-| `num_knowledge_agents` | Number of roaming agents |
-| `ground_truth_key` | `ground_truth_1` (10 snippets), `ground_truth_2` (20), `ground_truth_3` (40) |
-| `environment.width/height` | World dimensions in pixels |
-| `information_teleportation` | Controls how subjects appear/disappear (see below) |
-| `movement` | Whether subjects move around the environment |
-
-Available built-in profiles (all have `_self` and `_social` variants):
+**Available profiles:**
 
 | Profile | Description |
 |---|---|
-| `baseline_self / baseline_social` | All subjects always visible |
-| `decay_self_learning / decay_social_learning` | Subjects expire exponentially (no reappearance) |
-| `movement_self_learning / movement_social_learning` | Subjects wander the environment |
-| `dynamic_pool_self / dynamic_pool_social` | Subjects pop in/out; snippets recycled to a pool |
-| `constant_ratio_pool_self / constant_ratio_pool_social` | Fixed percentage of subjects visible at all times |
-| `exponential_swap_pool_self_* / _social_*` | Single Poisson timer swaps one active ↔ one inactive subject (20 / 50 / 80 % active variants) |
-| `exponential_one_time_pool_self_* / _social_*` | Like swap pool but each subject can only appear once |
+| `baseline` | All subjects always visible throughout the run |
+| `dynamic_pool_with_reemission` | Subjects rotate in and out via a Poisson timer; retired subjects can re-enter |
+| `dynamic_pool_without_reemission` | Same rotation, but each subject can only appear once |
 
-### Metric (`configs/configs.yaml`)
+**Global defaults** (override per-profile if needed):
 
 ```yaml
-metric: cosine-bm25   # default; options: cosine-bm25 | cosine-bert | bert-score | nli
+defaults:
+  num_knowledge_agents: 10
+  ground_truth_key: ground_truth_1   # ground_truth_1 | ground_truth_2 | ground_truth_3
+  environment:
+    width: 750
+    height: 750
+  num_snapshots: 25
+  snapshot_interval_seconds: 2.0     # total sim time = num_snapshots × snapshot_interval_seconds
 ```
 
-| Metric | What it measures |
-|---|---|
-| `cosine-bm25` | 0.7 × semantic cosine similarity + 0.3 × BM25 (lexical) |
-| `cosine-bert` | Cosine similarity via SentenceTransformers (`all-mpnet-base-v2`) |
-| `bert-score` | BERT F1 score (`roberta-large`) |
-| `nli` | NLI entailment probability (SummaC-ZS style, `roberta-large-mnli`) |
+**Teleportation parameters** (for the two pool profiles):
+
+```yaml
+information_teleportation:
+  active_ratio: 0.2        # fraction of subjects visible at any time
+  mean_swap_time: 10.0     # average seconds between Poisson swap events
+```
+
+### Ground-truth scenarios
+
+| Key | Name | Snippets | Complexity |
+|---|---|---|---|
+| `ground_truth_1` | career_fair_low | 10 | Low — broad scene overview |
+| `ground_truth_2` | career_fair_medium | 20 | Medium — adds demos, workshops, swag |
+| `ground_truth_3` | career_fair_high | 40 | High — full production detail |
+
+All three describe the same career fair at increasing levels of detail. Use a lower key for faster iteration and a higher key to test reconstruction under information overload.
 
 ---
 
 ## Running an Experiment
 
+### Single run
+
 ```bash
-# Single run (uses active_profile in configs.yaml)
-uv run experiment.py
-
-# 10 sequential runs of the same profile
-bash run.sh
-
 uv run experiment.py
 ```
 
-Output is written to `experiments/<profile>/run_NNNN/`:
+### Compare self vs. social learning
+
+```bash
+# Step 1 — run in self-learning mode
+# In configs.yaml: learning_mode: self
+uv run experiment.py
+
+# Step 2 — run in social-learning mode
+# In configs.yaml: learning_mode: social
+uv run experiment.py
+```
+
+### Multiple sequential runs of the same profile
+
+```bash
+bash run.sh        # defaults to 10 runs
+bash run.sh 25     # run a custom number of times
+```
+
+### Output structure
 
 ```
 experiments/
-└── baseline_social/
+└── baseline__social/
     └── run_0001/
-        ├── experiment.json        # per-agent scores and summaries at every snapshot
-        ├── metadata.json          # full config snapshot for reproducibility
-        ├── scores_over_time.png   # average score trajectory
-        └── similarity_matrices/
-            ├── agent_1_cosine.png # cosine heatmap: summary sentences vs GT facts
-            ├── agent_1_bm25.png   # BM25 heatmap
-            └── ...
+        ├── run.json        # per-agent scores and summaries at every snapshot
+        ├── metadata.json   # full config snapshot for reproducibility
+        └── run.log         # structured log of the run
 ```
-
----
-
-## How the Simulation Works
-
-### Agent Lifecycle (per tick)
-
-1. **Proximity scan** — the agent lists all nearby knowledge agents and subject agents.
-2. **Subject encounter (object FSM)** — if a visible subject is nearby and the agent is not busy with an LLM task, it reads the subject's snippet into its private context buffer `p`.  It then submits an async LLM task to integrate that snippet into its current summary.
-3. **Peer encounter (surrounding FSM)** — if another knowledge agent is nearby and social learning is enabled, the agent exchanges its most recent summary with that peer and submits an async LLM fusion task.
-4. **LLM polling** — completed async tasks are drained; their results update the agent's `t_summary` buffer.
-
-### LLM Fusion Prompts
-
-Two prompt templates govern knowledge integration:
-
-- **Private info prompt** — merges a newly observed snippet with the agent's existing summary.
-- **Interaction prompt** — merges a peer's summary with the agent's existing summary.
-
-Both prompts enforce lossless merging: every detail already in the prior summary must be preserved or made more specific; nothing is dropped unless directly contradicted.
-
-### Information Teleportation Modes
-
-These modes control whether and how subjects appear/disappear, letting the simulation study knowledge acquisition under partial observability:
-
-| Mode | Behaviour |
-|---|---|
-| *(none)* | All subjects always visible |
-| `decay` | Each subject is assigned an independent exponential lifetime; permanently disappears when it expires |
-| `dynamic_pool` | Subjects expire exponentially and new ones appear from a pool of unseen snippets |
-| `constant_ratio_pool` | A fixed fraction of all subjects is always visible; expired subjects are immediately replaced |
-| `exponential_swap_pool` | A single Poisson timer fires and swaps one active subject for one inactive one |
-| `exponential_one_time_pool` | Like swap pool but retired subjects can never re-enter the environment |
 
 ---
 
 ## Analysing Results
 
-### NLI Coverage Scoring (`data_processing/process_experiment.py`)
+### Coverage over time (`data_processing/process_experiment.py`)
 
-This is the primary post-processing script. It re-scores every agent snapshot using a neural NLI model (`cross-encoder/nli-deberta-v3-large`) and plots how well agents' summaries cover the ground-truth claims over time.
-
-**How it works:**
-
-1. Reads `run.json` from each run folder (contains snapshots, agent summaries, and metadata).
-2. Loads the ground-truth snippets for the run's `ground_truth_key` from `prompts.py`.
-3. For every agent at every snapshot, scores the agent's summary against each ground-truth claim: a claim is "covered" if at least one sentence in the summary entails it (NLI argmax = entailment).
-4. Plots per-agent coverage trajectories and the swarm average. Saves the plot as a PNG.
-
-**Basic usage:**
+Re-scores every agent snapshot using `cross-encoder/nli-deberta-v3-large` and plots how well agents' summaries cover the ground-truth claims over time. A claim is counted as covered when at least one sentence in the agent's summary entails it.
 
 ```bash
-# Score and plot a single run (saves to experiments/<profile>/run_0001/coverage_over_time.png)
+# Score and plot a single run
 uv run data_processing/process_experiment.py experiments/baseline__social/run_0001
 
 # Compare two runs side by side
@@ -232,27 +232,15 @@ uv run data_processing/process_experiment.py \
     experiments/baseline__self/run_0001 \
     experiments/baseline__social/run_0001
 
-# Overlay multiple runs on one axes with custom legend labels
+# Overlay runs on a single axes with custom labels
 uv run data_processing/process_experiment.py \
     experiments/baseline__self/run_0001 \
     experiments/baseline__social/run_0001 \
     --overlay \
-    --legend-labels "Self learning" "Social learning"
-
-# Save to a custom path
-uv run data_processing/process_experiment.py experiments/baseline__social/run_0001 \
-    --output results/my_plot.png
+    --legend-labels "Self" "Social"
 ```
 
-**Output:**
-
-| Default output path | What it contains |
-|---|---|
-| `<run_folder>/coverage_over_time.png` | Per-agent coverage lines + bold swarm average |
-
-When multiple run folders are passed without `--output`, no default path is used and the plot is displayed interactively (or you must supply `--output`).
-
-**Key CLI flags:**
+**Key flags:**
 
 | Flag | Description |
 |---|---|
@@ -262,38 +250,67 @@ When multiple run folders are passed without `--output`, no default path is used
 | `--title TEXT` | Custom plot title |
 | `--legend-labels L1 L2 …` | Custom labels, one per run folder |
 | `--xlim X_MIN X_MAX` | Override x-axis range |
-| `--ylim Y_MIN Y_MAX` | Override y-axis range (default: -0.02 1.08) |
+| `--ylim Y_MIN Y_MAX` | Override y-axis range |
 | `--figsize W H` | Figure size in inches |
 | `--no-legend` | Hide the legend |
 | `--no-grid` | Hide the background grid |
 
-> **Note:** The NLI model (~1.5 GB) is downloaded from HuggingFace on first use and cached locally. Subsequent runs load it from cache.
+> The NLI model (~1.5 GB) is downloaded from HuggingFace on first use and cached locally.
+
+### Aggregate across configs (`data_processing/process_experiment_configs.py`)
+
+Aggregates and plots results across multiple experiment configurations for cross-condition comparisons.
+
+```bash
+uv run data_processing/process_experiment_configs.py
+```
 
 ---
 
-### Other analysis scripts
+## Extending the System
 
-```bash
-# Plot average scores for a single swarm experiment (across multiple runs)
-uv run plot_swarm_experiment_averages.py
+### New experiment profile
 
-# Compare two or more experiment profiles side by side
-uv run plot_multi_experiment_averages.py
+Add a block under `experiments` in `configs/configs.yaml`:
 
-# Compare self-learning vs social-learning within a profile family
-uv run plot_swarm_group_scores.py
-
-# Single agent vs full swarm comparison
-uv run plot_single_agent_vs_swarm_self.py
-uv run plot_single_agent_vs_swarm_social.py
-
-# Statistical significance tests across runs
-uv run statistical_analysis.py
-uv run statistical_tests.py
-uv run run_all_stats.py
+```yaml
+experiments:
+  my_profile:
+    information_teleportation:
+      enabled: true
+      mode: dynamic_pool_with_reemission
+      active_ratio: 0.5
+      mean_swap_time: 5.0
 ```
 
-The `analysis/` folder contains additional profiling scripts for aggregating scores across experiment families.
+Then set `active_experiment: my_profile`.
+
+### New ground-truth scenario
+
+Add an entry to `GROUND_TRUTH_LIBRARY` in `prompts.py`:
+
+```python
+GROUND_TRUTH_LIBRARY["my_scenario"] = {
+    "name": "my_scenario",
+    "snippets": [...],   # list of strings, one per subject agent
+    "text": "...",       # full narrative text
+    "summary": "...",    # condensed version
+    "facts": "...",      # scoring facts as a single string
+}
+```
+
+Then set `ground_truth_key: my_scenario` in `configs.yaml`.
+
+### New LLM provider
+
+Extend the `LLM` class in `llm.py`. The public interface is:
+
+- `submit_interaction(summary, received_info)` → `Future[str]`
+- `submit_private_info(summary, private_info)` → `Future[str]`
+
+### New teleportation mode
+
+Add an `initialize_*` and `*_update` method pair to `Environment` in `environment.py`, then register the mode string in `experiment.py` and `environment.py → run()`.
 
 ---
 
@@ -301,50 +318,26 @@ The `analysis/` folder contains additional profiling scripts for aggregating sco
 
 | File | Purpose |
 |---|---|
-| `experiment.py` | Main entry point; configures and launches the simulation |
-| `agents.py` | `knowledgeAgent` — the core exploring/learning agent |
-| `subjects.py` | `SubjectAgent` — passive information carrier |
-| `environment.py` | `Environment` — simulation loop, scoring, persistence, teleportation |
-| `sensors.py` | `Sensor` (proximity/border reads) and `Actuator` (movement) |
+| `experiment.py` | Entry point; configures and launches the simulation |
+| `agents.py` | `knowledgeAgent` — exploring/learning agent with proximity FSM |
+| `subjects.py` | `SubjectAgent` — stationary information carrier |
+| `environment.py` | Simulation loop, snapshot scoring, teleportation, persistence |
+| `sensors.py` | `Sensor` (proximity reads) and `Actuator` (movement) |
 | `llm.py` | Async LLM wrapper supporting Ollama and OpenAI |
-| `metrics.py` | Cosine, BM25, BERTScore, NLI scorers; heatmap renderer |
-| `constants.py` | System prompts (v1/v2/v3) and ground-truth library |
-| `story_registry.py` | Alternative "Lost Artifact of Eldoria" narrative |
+| `prompts.py` | System prompt and ground-truth library |
 | `runtime_config.py` | Resolves active profile and returns flat settings dict |
+| `context.py` | Agent context buffer utilities |
 | `helpers.py` | YAML loading utilities |
-| `world.py` | Seeded environment builder for obstacles and sites |
-| `communication.py` | Low-level inter-agent message utilities |
+| `logging_setup.py` | Structured logging configuration |
 | `configs/configs.yaml` | All experiment profiles and global settings |
 | `run.sh` | Runs the active profile 10 times sequentially |
-| `process_experiment.py` | Post-processes a single run directory |
-| `plot_*.py` | Various comparison and visualisation scripts |
-| `statistical_*.py` | Statistical significance tests |
-
----
-
-## Extending the System
-
-**New experiment profile** — add a block under `experiments.profiles` in `configs/configs.yaml` and set `active_profile` to its key.
-
-**New ground-truth scenario** — add an entry to `GROUND_TRUTH_LIBRARY` in `constants.py`. Each entry needs `name`, `snippets` (list of strings), `text`, `summary`, and `facts`.
-
-**New LLM provider** — extend the `LLM` class in `llm.py`. The public interface is `submit_interaction()`, `submit_private_info()`, and `poll()`.
-
-**New metric** — add a branch in `environment.py → record_snapshot()` and implement the scorer in `metrics.py`.
-
-**New information teleportation mode** — add an `initialize_*` and `*_update` method pair to `Environment`, register the mode string in `experiment.py` and `environment.py → run()`.
+| `data_processing/process_experiment.py` | NLI coverage scoring and plotting for one or more runs |
+| `data_processing/process_experiment_configs.py` | Aggregate plotting across multiple configurations |
 
 ---
 
 ## Acknowledgements
 
 - [Violet](https://github.com/m-rots/violet) — the underlying 2D agent simulation framework.
-- [SentenceTransformers](https://www.sbert.net/) — semantic embeddings (`all-mpnet-base-v2`).
-- [BERTScore](https://github.com/Tiiiger/bert_score) — reference-based text quality evaluation.
+- [SentenceTransformers](https://www.sbert.net/) — semantic embeddings.
 - [Ollama](https://ollama.com/) — local LLM serving.
-
----
-
-## License
-
-MIT. Please respect the licenses of any third-party models you use (Gemma, GPT-4o, etc.).
