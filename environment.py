@@ -1,7 +1,8 @@
 from __future__ import annotations
-
+from multiprocessing import Pool
+import polars as pl
 import logging
-from vi import Agent, Config, Simulation, Window, HeadlessSimulation
+from vi import Agent, Config, Simulation, Window, HeadlessSimulation, Matrix
 import json
 from llm import LLM, shutdown_executor
 import pygame as pg
@@ -13,7 +14,8 @@ import random
 logger = logging.getLogger(__name__)
 
 
-class Environment(Simulation):
+
+class Environment(HeadlessSimulation):
     def __init__(self, config=None, num_knowledge_agents: int = 2, num_subject_agents: int = 5):
         
         super().__init__(config)
@@ -41,7 +43,7 @@ class Environment(Simulation):
         self.ground_truth_facts = ground_truth_bundle.get("facts", [])
         self.ground_truth_summary = ground_truth_bundle.get("summary", "")
  
-        self.start_time = pg.time.get_ticks()
+        self.start_time: float = 0.0
         self.tick_count = 0
         self._experiment_saved = False
         self.run_dir = self._make_run_dir()
@@ -124,6 +126,12 @@ class Environment(Simulation):
         return cleaned
     def run(self):
         self._running = True
+        # HeadlessSimulation never calls pg.init(), so pg.time.get_ticks() would
+        # otherwise return 0 forever. Initialise pygame's timer (no window is
+        # created — that only happens on pg.display.set_mode) before reading ticks.
+        if not pg.get_init():
+            pg.init()
+        self.start_time = pg.time.get_ticks()
         self.next_snapshot_time = self.snapshot_interval_seconds
         
         total_duration = self.num_snapshots * self.snapshot_interval_seconds
@@ -150,7 +158,7 @@ class Environment(Simulation):
                 self.stop()
                 break
 
-        shutdown_executor()
+        shutdown_executor(cancel=True)
         self.save_experiment_data()
 
         return self._metrics
@@ -167,14 +175,6 @@ class Environment(Simulation):
         logger.debug("Snapshot %d/%d recorded", self.snapshots_recorded, self.num_snapshots)
 
     def _elapsed_sim_seconds(self) -> float:
-        fps = getattr(self.config, "fps", None) if hasattr(self, "config") else None
-        if fps:
-            try:
-                fps_value = float(fps)
-                if fps_value > 0:
-                    return self.tick_count / fps_value
-            except (TypeError, ValueError):
-                pass
         return (pg.time.get_ticks() - self.start_time) / 1000.0
 
     def initialize_dynamic_pool_with_reemission(self):
