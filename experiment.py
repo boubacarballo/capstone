@@ -26,46 +26,19 @@ def run_simulation(config: Config, settings: dict):
 
     teleport_settings = settings.get("information_teleportation", {})
     teleport_enabled = teleport_settings.get("enabled", False)
-    teleport_mode = teleport_settings.get("mode", "shuffle")
-    initial_active_count = teleport_settings.get("initial_active_count", 5)
+    teleport_mode = teleport_settings.get("mode")
 
-    is_dynamic_pool = teleport_enabled and teleport_mode == "dynamic_pool"
-    is_constant_ratio_pool = teleport_enabled and teleport_mode == "constant_ratio_pool"
-    is_exponential_swap_pool = teleport_enabled and teleport_mode == "dynamic_pool_with_reemission"
-    is_exponential_one_time_pool = teleport_enabled and teleport_mode == "dynamic_pool_without_reemission"
-    snippet_pool = []
-    
-    if is_dynamic_pool:
-        random.shuffle(ground_truth_snippets)
-        initial_active_count = min(initial_active_count, len(ground_truth_snippets))
-        initial_snippets = ground_truth_snippets[:initial_active_count]
-        snippet_pool = ground_truth_snippets[initial_active_count:]
-        ground_truth_snippets = initial_snippets
-        num_subject_agents = initial_active_count
-        logger.info("Dynamic pool mode: %d initial subjects, %d in pool", initial_active_count, len(snippet_pool))
-    elif is_constant_ratio_pool:
-        num_fragments = len(ground_truth_snippets)
-        num_subject_agents = num_fragments
-        active_ratio = teleport_settings.get("active_ratio", 0.2)
-        target_active = max(1, round(active_ratio * num_subject_agents))
-        logger.info("Constant ratio pool: %d total subjects, %d active at %.0f%%",
-                    num_subject_agents, target_active, active_ratio * 100)
-    elif is_exponential_swap_pool:
-        num_fragments = len(ground_truth_snippets)
-        num_subject_agents = num_fragments
+    is_pool_with_reemission = teleport_enabled and teleport_mode == "dynamic_pool_with_reemission"
+    is_pool_without_reemission = teleport_enabled and teleport_mode == "dynamic_pool_without_reemission"
+
+    if is_pool_with_reemission or is_pool_without_reemission:
+        num_subject_agents = len(ground_truth_snippets)
         active_ratio = teleport_settings.get("active_ratio", 0.2)
         mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
         target_active = max(1, round(active_ratio * num_subject_agents))
-        logger.info("Dynamic pool (with reemission): %d total, %d initially active at %.0f%%, mean swap %.1fs",
-                    num_subject_agents, target_active, active_ratio * 100, mean_swap_time)
-    elif is_exponential_one_time_pool:
-        num_fragments = len(ground_truth_snippets)
-        num_subject_agents = num_fragments
-        active_ratio = teleport_settings.get("active_ratio", 0.2)
-        mean_swap_time = teleport_settings.get("mean_swap_time", 10.0)
-        target_active = max(1, round(active_ratio * num_subject_agents))
-        logger.info("Dynamic pool (no reemission): %d total, %d initially active at %.0f%%, mean swap %.1fs",
-                    num_subject_agents, target_active, active_ratio * 100, mean_swap_time)
+        reemission_label = "with" if is_pool_with_reemission else "without"
+        logger.info("Dynamic pool (%s reemission): %d total, %d initially active at %.0f%%, mean swap %.1fs",
+                    reemission_label, num_subject_agents, target_active, active_ratio * 100, mean_swap_time)
     else:
         num_fragments = len(ground_truth_snippets)
         if num_subject_agents <= 0 or num_subject_agents > num_fragments:
@@ -113,16 +86,10 @@ def run_simulation(config: Config, settings: dict):
             subject.info = fragment
             subject.pos.update(position)
 
-    if is_dynamic_pool and snippet_pool:
-        simulation.initialize_dynamic_pool(snippet_pool)
-
-    if is_constant_ratio_pool:
-        simulation.initialize_constant_ratio_pool()
-
-    if is_exponential_swap_pool:
+    if is_pool_with_reemission:
         simulation.initialize_dynamic_pool_with_reemission()
 
-    if is_exponential_one_time_pool:
+    if is_pool_without_reemission:
         simulation.initialize_dynamic_pool_without_reemission()
     
     return simulation
