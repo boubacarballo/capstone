@@ -20,14 +20,6 @@ class LLMRequestError(RuntimeError):
 _LLM_EXECUTOR: ThreadPoolExecutor | None = None
 
 
-def shutdown_executor() -> None:
-    """Wait for all in-flight LLM requests to finish, then tear down the thread pool."""
-    global _LLM_EXECUTOR
-    if _LLM_EXECUTOR is not None:
-        _LLM_EXECUTOR.shutdown(wait=True, cancel_futures=False)
-        _LLM_EXECUTOR = None
-
-
 class LLM:
     def __init__(self):
         self.provider = os.getenv("LLM_PROVIDER", "ollama").lower()

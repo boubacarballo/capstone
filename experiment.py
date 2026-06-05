@@ -12,8 +12,7 @@ from runtime_config import get_runtime_settings
 
 logger = logging.getLogger(__name__)
 
-def run_simulation():
-    settings = get_runtime_settings()
+def run_simulation(config: Config, settings: dict):
     env_width = settings["environment"]["width"]
     env_height = settings["environment"]["height"]
     context_length = settings["context"].get("p", 2)
@@ -73,9 +72,8 @@ def run_simulation():
             num_subject_agents = num_fragments
         ground_truth_snippets = ground_truth_snippets[:num_subject_agents]
 
-    simulation_config = Config(window=Window(env_width, env_height), seed=random.randint(0, 10))
     simulation = Environment(
-        config=simulation_config,
+        config=config,
         num_knowledge_agents=num_knowledge_agents,
         num_subject_agents=num_subject_agents,
     )
@@ -132,7 +130,16 @@ def run_simulation():
 if __name__ == "__main__":
     simulation = None
     try:
-        simulation = run_simulation()
+        settings = get_runtime_settings()
+        env_width = settings["environment"]["width"]
+        fps = settings.get("fps")
+        env_height = settings["environment"]["height"]
+        simulation_config = Config(
+            window=Window(env_width, env_height),
+            seed=random.randint(0, 10),
+            fps_limit=fps,
+        )
+        simulation = run_simulation(simulation_config, settings)
         setup_logging(simulation.run_dir / "run.log")
         simulation.run()
     except KeyboardInterrupt:

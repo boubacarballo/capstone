@@ -14,7 +14,7 @@ defaults:
     height: 750
   num_snapshots: 5
   snapshot_interval_seconds: 2.0
-  is_headless: true #default is true
+  is_headless: false #default is true
   fps: 120 #default from violet is 60
 
 experiments:

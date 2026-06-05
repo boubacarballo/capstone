@@ -4,7 +4,7 @@ import polars as pl
 import logging
 from vi import Agent, Config, Simulation, Window, HeadlessSimulation, Matrix
 import json
-from llm import LLM, shutdown_executor
+from llm import LLM
 import pygame as pg
 from pathlib import Path
 from runtime_config import get_runtime_settings
@@ -159,7 +159,6 @@ class Environment(simulation_type):
                 self.stop()
                 break
 
-        shutdown_executor(cancel=True)
         self.save_experiment_data()
 
         return self._metrics
