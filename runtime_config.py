@@ -76,11 +76,15 @@ def get_runtime_settings() -> Dict[str, Any]:
     movement_enabled = bool(movement_cfg.get("enabled", False))
     movement_speed = movement_cfg.get("speed", 1.5)
     movement_angular_velocity = movement_cfg.get("angular_velocity", 5.0)
+    is_headless = config.get("is_headless", True)
+    fps = config.get("fps", 60)
 
     num_snapshots = int(experiment.get("num_snapshots", 60))
     snapshot_interval_seconds = float(experiment.get("snapshot_interval_seconds", 2.0))
 
     return {
+        "is_headless": is_headless,
+        "fps": fps,
         "active_experiment": experiment["_key"],
         "learning_mode": learning_mode,
         "num_snapshots": num_snapshots,

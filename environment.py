@@ -13,9 +13,10 @@ import random
 
 logger = logging.getLogger(__name__)
 
+settings = get_runtime_settings()
+simulation_type = HeadlessSimulation if settings.get("is_headless") else Simulation
 
-
-class Environment(HeadlessSimulation):
+class Environment(simulation_type):
     def __init__(self, config=None, num_knowledge_agents: int = 2, num_subject_agents: int = 5):
         
         super().__init__(config)
