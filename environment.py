@@ -24,7 +24,13 @@ class Environment(simulation_type):
         self.runtime_settings = get_runtime_settings()
         self.num_knowledge_agents = num_knowledge_agents
         self.num_subject_agents = num_subject_agents
-        self.social_learning_enabled = self.runtime_settings["social_learning_enabled"]
+
+        # Honor the config object if it carries these fields (e.g. ExperimentConfig from
+        # run_matrix.py); otherwise fall back to yaml-derived runtime settings.
+        self.learning_mode = getattr(config, "learning_mode", None) or self.runtime_settings["learning_mode"]
+        self.social_learning_enabled = self.learning_mode == "social"
+        self.swarm_type = "social_learning" if self.social_learning_enabled else "self_learning"
+        self.experiment_name = getattr(config, "experiment", None) or self.runtime_settings["active_experiment"]
 
         self.num_snapshots = int(self.runtime_settings.get("num_snapshots", 60))
         self.snapshot_interval_seconds = float(self.runtime_settings.get("snapshot_interval_seconds", 2.0))
@@ -51,8 +57,8 @@ class Environment(simulation_type):
 
     def _make_run_dir(self) -> Path:
         base_dir = Path("experiments")
-        active_experiment = self.runtime_settings.get("active_experiment", "unspecified")
-        learning_mode = self.runtime_settings.get("learning_mode", "self")
+        active_experiment = self.experiment_name
+        learning_mode = self.learning_mode
 
         teleport = self.runtime_settings.get("information_teleportation", {})
         if teleport.get("enabled"):
@@ -322,9 +328,9 @@ class Environment(simulation_type):
                     }
 
             run_dir = self.run_dir
-            active_experiment = self.runtime_settings.get("active_experiment", "unspecified")
-            learning_mode = self.runtime_settings.get("learning_mode", "self")
-            swarm_type = self.runtime_settings.get("swarm_type") or ("social_learning" if self.social_learning_enabled else "self_learning")
+            active_experiment = self.experiment_name
+            learning_mode = self.learning_mode
+            swarm_type = self.swarm_type
 
             metadata = {
                 "created_at_utc": datetime.utcnow().isoformat() + "Z",

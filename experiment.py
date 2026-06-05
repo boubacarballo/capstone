@@ -16,7 +16,10 @@ def run_simulation(config: Config, settings: dict):
     env_width = settings["environment"]["width"]
     env_height = settings["environment"]["height"]
     context_length = settings["context"].get("p", 2)
-    social_learning_enabled = settings["social_learning_enabled"]
+    # Config-first: an ExperimentConfig (run_matrix.py) supplies learning_mode; a plain
+    # vi.Config (single-run __main__) lacks it and falls back to yaml-derived settings.
+    learning_mode = getattr(config, "learning_mode", None) or settings["learning_mode"]
+    social_learning_enabled = learning_mode == "social"
     num_knowledge_agents = settings["agents"]["knowledge"]
     num_subject_agents = settings["agents"]["subjects"]
     ground_truth_snippets = list(settings["ground_truth"].get("snippets", []))
